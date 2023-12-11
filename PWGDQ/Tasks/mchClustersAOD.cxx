@@ -97,15 +97,21 @@ struct mchClustersAOD
 	map<int, math_utils::Transform3D> transformOld;
 	map<int, math_utils::Transform3D> transformNew;
 
-	double Reso_X = 0.4;
-    double Reso_Y = 0.4;
+	double Reso_X = 0.0;
+    double Reso_Y = 0.0;
     int runNumber = 539483;
+
+    Configurable<string> fConfigCcdbUrl{"ccdb-url", "http://alice-ccdb.cern.ch", "url of the ccdb repository"};
+    Configurable<string> fConfigColType{"collision-type", "pp", "Resolution specification for trackfitter"};
+    Configurable<int> fRunNumber{"run-number", 539483, "Run number"};
+    Configurable<string> fConfigNewGeoFile{"new-geo", "o2sim_geometry-aligned.root", "New geometry for transformation"};
+
 	
 	void init(InitContext&){
 
 		//Load field and geometry informations here
-		ccdbApi.init("http://alice-ccdb.cern.ch");
-    	ccdb->setURL("http://alice-ccdb.cern.ch");
+		ccdbApi.init(fConfigCcdbUrl.value);
+    	ccdb->setURL(fConfigCcdbUrl.value);
     	ccdb->setCaching(true);
     	/*
     	auto inputs = select(inputConfig.c_str());
@@ -129,6 +135,15 @@ struct mchClustersAOD
   		trackFitter = new mch::TrackFitter();
   		trackFitter->initField(grpmag->getL3Current(), grpmag->getDipoleCurrent());
   		trackFitter->smoothTracks(true);
+
+  		if(fConfigColType.value == "pp"){
+  			Reso_X = 0.4;
+  			Reso_Y = 0.4;
+  		}else{
+  			Reso_X = 0.2;
+  			Reso_Y = 0.2;
+  		}
+
   		trackFitter->setChamberResolution(Reso_X, Reso_Y);
   		trackFitter->useChamberResolution();
 
@@ -142,7 +157,7 @@ struct mchClustersAOD
   		}
 
   		//Load new geometry with which we want to check
-  		base::GeometryManager::loadGeometry("o2sim_geometry-aligned.root");
+  		base::GeometryManager::loadGeometry(fConfigNewGeoFile.value);
   		transformation = mch::geo::transformationFromTGeoManager(*gGeoManager);
     	for (int i = 0; i < 156; i++) {
       		int iDEN = GetDetElemId(i);
