@@ -61,5 +61,19 @@ o2physics_add_dpl_workflow(task-j-psi-hf
 
 o2physics_add_dpl_workflow(task-mchclusters
                     SOURCES mchClustersAOD.cxx
-                    PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::AnalysisCore O2Physics::PWGDQCore
+                    PUBLIC_LINK_LIBRARIES 
+                        O2::Framework 
+                        O2Physics::AnalysisCore 
+                        O2Physics::PWGDQCore 
+                        O2::CommonUtils
+                        O2::MCHClustering
+                        O2::DPLUtils
+                        O2::CCDB
+                        O2::DataFormatsParameters
+                        O2::MCHBase
+                        O2::MCHTracking
+                        O2::DataFormatsMCH
+                        O2::DetectorsBase
+                        O2::MCHGeometryTransformer
+                        O2::MathUtils 
                     COMPONENT_NAME Analysis)
