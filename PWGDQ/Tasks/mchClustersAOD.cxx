@@ -107,7 +107,7 @@ struct mchClustersAOD
 		ccdbApi.init("http://alice-ccdb.cern.ch");
     	ccdb->setURL("http://alice-ccdb.cern.ch");
     	ccdb->setCaching(true);
-
+    	/*
     	auto inputs = select(inputConfig.c_str());
 		auto ccdbRequest = make_shared<base::GRPGeomRequest>(		false,                             // orbitResetTime
                                                               		false,                             // GRPECS=true
@@ -118,6 +118,7 @@ struct mchClustersAOD
                                                                 	inputs);
 
 		headers = ccdbApi.retrieveHeaders(Form("RCT/Info/RunInformation/%i", runNumber), metadataRCT, -1);
+		*/
       	ts = atol(headers["SOR"].c_str());
 
     	grpmag = ccdb->getForTimeStamp<parameters::GRPMagField>("GLO/Config/GRPMagField", ts);
