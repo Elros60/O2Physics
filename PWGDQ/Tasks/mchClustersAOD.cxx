@@ -131,6 +131,7 @@ struct mchClustersAOD
   		trackFitter->setChamberResolution(Reso_X, Reso_Y);
   		trackFitter->useChamberResolution();
 
+  		//Load reference geometry
   		geo = ccdb->getForTimeStamp<TGeoManager>("GLO/Config/GeometryAligned", ts);
   		//base::GRPGeomHelper::instance().setRequest(ccdbRequest);
   		transformation = mch::geo::transformationFromTGeoManager(*geo);
@@ -138,6 +139,37 @@ struct mchClustersAOD
     		int iDEN = GetDetElemId(i);
     	transformOld[iDEN] = transformation(iDEN);
   		}
+
+  		//Load new geometry with which we want to check
+  		base::GeometryManager::loadGeometry("o2sim_geometry-aligned.root");
+  		transformation = mch::geo::transformationFromTGeoManager(*gGeoManager);
+    	for (int i = 0; i < 156; i++) {
+      		int iDEN = GetDetElemId(i);
+      		transformNew[iDEN] = transformation(iDEN);
+    	}
+
+    	//Print loaded geometries to check
+    	/*
+    	for (int i = 0; i < 156; i++) { 
+			int iDEN = GetDetElemId(i);
+			auto transform3D_Old = transformOld[iDEN];
+			auto transform3D_New = transformNew[iDEN];
+
+
+			TMatrixD MTransOld(3,4);
+			TMatrixD MTransNew(3,4);
+
+			transform3D_Old.GetTransformMatrix(MTransOld);
+			transform3D_New.GetTransformMatrix(MTransNew);
+			cout << "===================================================" <<endl;
+			cout << "DET ID: " << iDEN <<endl;
+			MTransOld.Print();
+			MTransNew.Print();
+			cout << "===================================================" <<endl;
+			cout << endl;
+
+	    }
+	    */
 
 	};
 	
@@ -156,11 +188,19 @@ struct mchClustersAOD
 			LOG(info) << Form("%s%f","pos y: ",cluster.y());
 			LOG(info) << Form("%s%f","pos z: ",cluster.z());
 
+			math_utils::Point3D<double> local;
+			math_utils::Point3D<double> master;
+
+			master.SetXYZ(cluster.x(), cluster.y(), cluster.z());
+
+			transformOld[cluster.deId()].MasterToLocal(master, local);
+			transformNew[cluster.deId()].LocalToMaster(local, master);
+
 			//Refit
 			mch::Cluster* mch_cluster = new mch::Cluster();
-			mch_cluster->x = cluster.x();
-			mch_cluster->y = cluster.y();
-			mch_cluster->z = cluster.z();
+			mch_cluster->x = master.x();
+			mch_cluster->y = master.y();
+			mch_cluster->z = master.z();
 			uint32_t ClUId = mch::Cluster::buildUniqueId(int(cluster.deId()/100),cluster.deId()%100,clIndex);
 			mch_cluster->uid = ClUId;
 			//std::cout << ClUId << std::endl;
