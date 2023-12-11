@@ -122,9 +122,8 @@ struct mchClustersAOD
                                                                 	false,                             // askMatLUT
                                                                 	base::GRPGeomRequest::Aligned, // geometry
                                                                 	inputs);
-
-		headers = ccdbApi.retrieveHeaders(Form("RCT/Info/RunInformation/%i", runNumber), metadataRCT, -1);
 		*/
+		headers = ccdbApi.retrieveHeaders(Form("RCT/Info/RunInformation/%i", runNumber), metadataRCT, -1);
       	ts = atol(headers["SOR"].c_str());
 
     	grpmag = ccdb->getForTimeStamp<parameters::GRPMagField>("GLO/Config/GRPMagField", ts);
