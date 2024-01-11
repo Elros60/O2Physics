@@ -1,5 +1,5 @@
-#include "Framework/runDataProcessing.h"
 #include "Framework/AnalysisTask.h"
+#include "Framework/runDataProcessing.h"
 
 #include <cmath>
 #include <string>
@@ -8,10 +8,8 @@
 #include <vector>
 #include <ctime>
 #include <iostream>
-
 #include <gsl/span>
 
-// #include <TSystem.h>
 #include <Math/Vector4D.h>
 #include <TCanvas.h>
 #include <TDatabasePDG.h>
@@ -52,8 +50,6 @@
 #include "CCDB/CcdbApi.h"
 
 #include "SimulationDataFormat/MCCompLabel.h"
-
-//  Test with alignment codes
 #include "DataFormatsMCH/Cluster.h"
 #include "MCHTracking/Track.h"
 #include "MCHTracking/TrackExtrap.h"
@@ -67,132 +63,105 @@
 
 using namespace o2;
 using namespace o2::framework;
+using namespace o2::framework::expressions;
 using namespace std;
 
 const int fgNCh = 10;
 const int fgNDetElemCh[fgNCh] = {4, 4, 4, 4, 18, 18, 26, 26, 26, 26};
-const int fgSNDetElemCh[fgNCh + 1] = {0,  4,  8,   12,  16, 34,
-                                      52, 78, 104, 130, 156}; 
-
-
+const int fgSNDetElemCh[fgNCh + 1] = {0,  4,  8,   12,  16, 34, 52, 78, 104, 130, 156}; 
 
 Int_t GetDetElemNumber(Int_t iDetElemId);
 Int_t GetDetElemId(Int_t iDetElemNumber);
+bool RemoveTrack(mch::Track &track, double ImproveCut);
 
+mch::TrackFitter trackFitter;
+mch::geo::TransformationCreator transformation;
+
+double Reso_X = 0.0;
+double Reso_Y = 0.0;
+double ImproveCut = 6.0;
+
+map<int, math_utils::Transform3D> transformOld;
+map<int, math_utils::Transform3D> transformNew;
+
+vector<mch::Track> mch_tracks;
 
 struct mchClustersAOD
 {
-	vector<mch::Track*> mch_tracks;
-	mch::Track* convertedTrack;
+
 	ccdb::CcdbApi ccdbApi;
 	Service<ccdb::BasicCCDBManager> ccdb;
-	mch::geo::TransformationCreator transformation;
 	parameters::GRPMagField* grpmag;
 	TGeoManager* geo;
-	mch::TrackFitter *trackFitter;
+
 	string inputConfig = fmt::format("rofs:MCH/CLUSTERROFS;clusters:MCH/CLUSTERS");
 	map<string, string> metadataRCT, headers;
 	uint64_t ts{};
 
-	map<int, math_utils::Transform3D> transformOld;
-	map<int, math_utils::Transform3D> transformNew;
-
-	double Reso_X = 0.0;
-    double Reso_Y = 0.0;
-    int runNumber = 539483;
-
-    Configurable<string> fConfigCcdbUrl{"ccdb-url", "http://alice-ccdb.cern.ch", "url of the ccdb repository"};
-    Configurable<string> fConfigColType{"collision-type", "pp", "Resolution specification for trackfitter"};
-    Configurable<int> fRunNumber{"run-number", 539483, "Run number"};
-    Configurable<string> fConfigNewGeoFile{"new-geo", "o2sim_geometry-aligned.root", "New geometry for transformation"};
+	Configurable<string> fConfigCcdbUrl{"ccdb-url", "http://alice-ccdb.cern.ch", "url of the ccdb repository"};
+	Configurable<string> fConfigColType{"collision-type", "pp", "Resolution specification for trackfitter"};
+	Configurable<int> fRunNumber{"run-number", 539483, "Run number"};
+	Configurable<bool> fDoNewGeo{"do-realign", false, "Transform to a given new geometry"};
+	Configurable<string> fConfigNewGeoFile{"new-geo", "o2sim_geometry-aligned.root", "New geometry for transformation"};
+	Configurable<string> fOutputFileName{"outfile", "mchtracks.root", "Name of output file"};
 
 	
 	void init(InitContext&){
 
 		//Load field and geometry informations here
 		ccdbApi.init(fConfigCcdbUrl.value);
-    	ccdb->setURL(fConfigCcdbUrl.value);
-    	ccdb->setCaching(true);
-    	/*
-    	auto inputs = select(inputConfig.c_str());
-		auto ccdbRequest = make_shared<base::GRPGeomRequest>(		false,                             // orbitResetTime
-                                                              		false,                             // GRPECS=true
-                                                                	false,                             // GRPLHCIF
-                                                                	false,                             // GRPMagField
-                                                                	false,                             // askMatLUT
-                                                                	base::GRPGeomRequest::Aligned, // geometry
-                                                                	inputs);
-		*/
-		headers = ccdbApi.retrieveHeaders(Form("RCT/Info/RunInformation/%i", runNumber), metadataRCT, -1);
-      	ts = atol(headers["SOR"].c_str());
-
-    	grpmag = ccdb->getForTimeStamp<parameters::GRPMagField>("GLO/Config/GRPMagField", ts);
+  	ccdb->setURL(fConfigCcdbUrl.value);
+  	ccdb->setCaching(true);
+		headers = ccdbApi.retrieveHeaders(Form("RCT/Info/RunInformation/%i", fRunNumber.value), metadataRCT, -1);
+    ts = atol(headers["SOR"].c_str());
+		grpmag = ccdb->getForTimeStamp<parameters::GRPMagField>("GLO/Config/GRPMagField", ts);
 		base::Propagator::initFieldFromGRP(grpmag);
 		mch::TrackExtrap::setField();
-  		mch::TrackExtrap::useExtrapV2();
+  	mch::TrackExtrap::useExtrapV2();
  
-  		trackFitter = new mch::TrackFitter();
-  		trackFitter->initField(grpmag->getL3Current(), grpmag->getDipoleCurrent());
-  		trackFitter->smoothTracks(true);
+		trackFitter.initField(grpmag->getL3Current(), grpmag->getDipoleCurrent());
+		trackFitter.smoothTracks(true);
 
-  		if(fConfigColType.value == "pp"){
-  			Reso_X = 0.4;
-  			Reso_Y = 0.4;
-  		}else{
-  			Reso_X = 0.2;
-  			Reso_Y = 0.2;
-  		}
+		if(fConfigColType.value == "pp"){
+			Reso_X = 0.4;
+			Reso_Y = 0.4;
+			ImproveCut = 6.0;
+			LOG(info) << "Using pp parameter set for TrackFitter";
+		}else{
+			Reso_X = 0.2;
+			Reso_Y = 0.2;
+			ImproveCut = 4.0;
+			LOG(info) << "Using PbPb parameter set for TrackFitter";
+		}
 
-  		trackFitter->setChamberResolution(Reso_X, Reso_Y);
-  		trackFitter->useChamberResolution();
+		trackFitter.setChamberResolution(Reso_X, Reso_Y);
+		trackFitter.useChamberResolution();
 
-  		//Load reference geometry
-  		geo = ccdb->getForTimeStamp<TGeoManager>("GLO/Config/GeometryAligned", ts);
-  		//base::GRPGeomHelper::instance().setRequest(ccdbRequest);
-  		transformation = mch::geo::transformationFromTGeoManager(*geo);
-  		for (int i = 0; i < 156; i++) { 
-    		int iDEN = GetDetElemId(i);
-    	transformOld[iDEN] = transformation(iDEN);
-  		}
+		//Load reference geometry
+		geo = ccdb->getForTimeStamp<TGeoManager>("GLO/Config/GeometryAligned", ts);
+		transformation = mch::geo::transformationFromTGeoManager(*geo);
+		for (int i = 0; i < 156; i++) { 
+  		int iDEN = GetDetElemId(i);
+  	transformOld[iDEN] = transformation(iDEN);
+		}
 
-  		//Load new geometry with which we want to check
-  		base::GeometryManager::loadGeometry(fConfigNewGeoFile.value);
-  		transformation = mch::geo::transformationFromTGeoManager(*gGeoManager);
-    	for (int i = 0; i < 156; i++) {
-      		int iDEN = GetDetElemId(i);
-      		transformNew[iDEN] = transformation(iDEN);
-    	}
-
-    	//Print loaded geometries to check
-    	/*
-    	for (int i = 0; i < 156; i++) { 
-			int iDEN = GetDetElemId(i);
-			auto transform3D_Old = transformOld[iDEN];
-			auto transform3D_New = transformNew[iDEN];
-
-
-			TMatrixD MTransOld(3,4);
-			TMatrixD MTransNew(3,4);
-
-			transform3D_Old.GetTransformMatrix(MTransOld);
-			transform3D_New.GetTransformMatrix(MTransNew);
-			cout << "===================================================" <<endl;
-			cout << "DET ID: " << iDEN <<endl;
-			MTransOld.Print();
-			MTransNew.Print();
-			cout << "===================================================" <<endl;
-			cout << endl;
-
-	    }
-	    */
-
+		if(fDoNewGeo.value){
+			//Load new geometry with which we want to check
+			base::GeometryManager::loadGeometry(fConfigNewGeoFile.value);
+			transformation = mch::geo::transformationFromTGeoManager(*gGeoManager);
+	  	for (int i = 0; i < 156; i++) {
+	    		int iDEN = GetDetElemId(i);
+	    		transformNew[iDEN] = transformation(iDEN);
+	  	}		
+		}
+	
 	};
 	
+	template <typename TTrack, typename TClusters>
+	void runProcessTracks(TTrack const& track, TClusters const& clusters){
 
-	void process(aod::FwdTracks::iterator const& track, aod::FwdTrkCls const& clusters){
-
-		convertedTrack = new mch::Track();
 		int clIndex = -1;
+		mch::Track convertedTrack;
 
 		for(auto& cluster : clusters){
 
@@ -203,19 +172,25 @@ struct mchClustersAOD
 			LOG(info) << Form("%s%f","pos y: ",cluster.y());
 			LOG(info) << Form("%s%f","pos z: ",cluster.z());
 
-			math_utils::Point3D<double> local;
-			math_utils::Point3D<double> master;
-
-			master.SetXYZ(cluster.x(), cluster.y(), cluster.z());
-
-			transformOld[cluster.deId()].MasterToLocal(master, local);
-			transformNew[cluster.deId()].LocalToMaster(local, master);
-
-			//Refit
 			mch::Cluster* mch_cluster = new mch::Cluster();
-			mch_cluster->x = master.x();
-			mch_cluster->y = master.y();
-			mch_cluster->z = master.z();
+			mch_cluster->x = cluster.x();
+			mch_cluster->y = cluster.y();
+			mch_cluster->z = cluster.z();
+
+			if(fDoNewGeo.value){
+				math_utils::Point3D<double> local;
+				math_utils::Point3D<double> master;
+
+				master.SetXYZ(cluster.x(), cluster.y(), cluster.z());
+
+				transformOld[cluster.deId()].MasterToLocal(master, local);
+				transformNew[cluster.deId()].LocalToMaster(local, master);
+
+				mch_cluster->x = master.x();
+				mch_cluster->y = master.y();
+				mch_cluster->z = master.z();
+			}
+		
 			uint32_t ClUId = mch::Cluster::buildUniqueId(int(cluster.deId()/100),cluster.deId()%100,clIndex);
 			mch_cluster->uid = ClUId;
 			//std::cout << ClUId << std::endl;
@@ -224,28 +199,31 @@ struct mchClustersAOD
 			//std::cout << "DEId: " << mch::Cluster::getDEId(ClUId) << std::endl;
 			mch_cluster->ex = cluster.isGoodX() ? 0.2 : 10.0;
 			mch_cluster->ey = cluster.isGoodY() ? 0.2 : 10.0;
-			convertedTrack->createParamAtCluster(*mch_cluster);
+			convertedTrack.createParamAtCluster(*mch_cluster);
 	
 		}
 
-
-		if(convertedTrack && convertedTrack->getNClusters()!=0){
-			LOG(info) << "Track before refit: ";
-			convertedTrack->print();
-			mch_tracks.push_back(convertedTrack);
-			try{
-				LOG(info) << "Trying to refit current track...";
-    			trackFitter->fit(*convertedTrack, false);
-  			}catch(exception const& e){
-    			LOG(info) << "Track to be removed!";
-  			}
-  			LOG(info) << "Track after refit: ";
-  			convertedTrack->print();
-
+		if(convertedTrack.getNClusters()>=9){
+			// Erase removable track
+			RemoveTrack(convertedTrack, ImproveCut); //mch_tracks.emplace_back(convertedTrack);
 		}
 
+	}
+
+	void processTracks(aod::FwdTracks const& tracks, aod::FwdTrkCls const& clusters){
+		
+		for (const auto& track : tracks) {
+      runProcessTracks(track, clusters);
+    }
+
+    TFile *FileAlign = TFile::Open(fOutputFileName.value.c_str(), "RECREATE");
+		FileAlign->cd();
+		FileAlign->WriteObjectAny(&mch_tracks, "std::vector<o2::mch::Track>", "mchtracks");
+		FileAlign->Close();
 
 	}
+
+	PROCESS_SWITCH(mchClustersAOD, processTracks, "Process tracks", true);
 	
 };
 
@@ -255,9 +233,9 @@ WorkflowSpec defineDataProcessing(ConfigContext const& cfgc)
 }
 
 
-
+//_________________________________________________________________________________________________
 Int_t GetDetElemNumber(Int_t iDetElemId) {
-  /// get det element number from ID
+  // get det element number from ID
   // get chamber and element number in chamber
   const Int_t iCh = iDetElemId / 100;
   const Int_t iDet = iDetElemId % 100;
@@ -271,7 +249,7 @@ Int_t GetDetElemNumber(Int_t iDetElemId) {
   return iDet + fgSNDetElemCh[iCh - 1];
 }
 
-
+//_________________________________________________________________________________________________
 Int_t GetDetElemId(Int_t iDetElemNumber) {
   // make sure detector number is valid
   if (!(iDetElemNumber >= fgSNDetElemCh[0] &&
@@ -297,4 +275,82 @@ Int_t GetDetElemId(Int_t iDetElemNumber) {
 
   // add number of detectors up to this chamber
   return 100 * iCh + iDet;
+}
+
+//_________________________________________________________________________________________________
+bool RemoveTrack(mch::Track &track, double ImproveCut)
+{
+
+  double maxChi2Cluster = 2*ImproveCut*ImproveCut;
+  bool removeTrack = false;
+
+  try{
+    trackFitter.fit(track, false);
+  }catch(exception const& e){
+    removeTrack = true;
+    return removeTrack;
+  }
+
+  auto itStartingParam = std::prev(track.rend());
+
+  while(true){
+
+    try {
+        trackFitter.fit(track, true, false, (itStartingParam == track.rbegin()) ? nullptr : &itStartingParam);
+      } catch (exception const&) {
+        removeTrack = true;
+        break;
+    }
+
+    double worstLocalChi2 = -1.0;
+
+    track.tagRemovableClusters(0x1F, false);
+
+    auto itWorstParam = track.end();
+
+    for(auto itParam = track.begin(); itParam != track.end(); ++itParam){
+      if(itParam->getLocalChi2() > worstLocalChi2){
+        worstLocalChi2 = itParam->getLocalChi2();
+        itWorstParam = itParam;
+      }
+    }
+
+    if(worstLocalChi2 < maxChi2Cluster) break;
+
+    if(!itWorstParam->isRemovable()){
+        removeTrack = true;
+        track.removable();
+        break;
+    }
+
+
+    auto itNextParam = track.removeParamAtCluster(itWorstParam);
+    auto itNextToNextParam = (itNextParam == track.end()) ? itNextParam : std::next(itNextParam);
+    itStartingParam = track.rbegin();
+
+    if(track.getNClusters()<10){
+      removeTrack = true;
+      break;
+    }else{
+      while (itNextToNextParam != track.end()) {
+        if (itNextToNextParam->getClusterPtr()->getChamberId() != itNextParam->getClusterPtr()->getChamberId()) {
+          itStartingParam = std::make_reverse_iterator(++itNextParam);
+          break;
+        }
+        ++itNextToNextParam;
+      }
+    }
+
+
+  }
+
+  if(!removeTrack){
+    for (auto& param : track) {
+        param.setParameters(param.getSmoothParameters());
+        param.setCovariances(param.getSmoothCovariances());
+    }
+  }
+
+  return removeTrack;
+
 }
