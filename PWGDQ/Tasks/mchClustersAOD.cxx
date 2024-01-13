@@ -66,33 +66,36 @@ using namespace o2::framework;
 using namespace o2::framework::expressions;
 using namespace std;
 
-const int fgNCh = 10;
-const int fgNDetElemCh[fgNCh] = {4, 4, 4, 4, 18, 18, 26, 26, 26, 26};
-const int fgSNDetElemCh[fgNCh + 1] = {0,  4,  8,   12,  16, 34, 52, 78, 104, 130, 156}; 
-
+/*
 Int_t GetDetElemNumber(Int_t iDetElemId);
 Int_t GetDetElemId(Int_t iDetElemNumber);
 bool RemoveTrack(mch::Track &track, double ImproveCut);
+*/
 
-mch::TrackFitter trackFitter;
-mch::geo::TransformationCreator transformation;
+const int fgNCh = 10;
+const int fgNDetElemCh[fgNCh] = {4, 4, 4, 4, 18, 18, 26, 26, 26, 26};
+const int fgSNDetElemCh[fgNCh + 1] = {0,  4,  8,   12,  16, 34, 52, 78, 104, 130, 156};
 
-double Reso_X = 0.0;
-double Reso_Y = 0.0;
-double ImproveCut = 6.0;
-
-map<int, math_utils::Transform3D> transformOld;
-map<int, math_utils::Transform3D> transformNew;
-
-vector<mch::Track> mch_tracks;
 
 struct mchClustersAOD
-{
+{ 
 
 	ccdb::CcdbApi ccdbApi;
 	Service<ccdb::BasicCCDBManager> ccdb;
 	parameters::GRPMagField* grpmag;
 	TGeoManager* geo;
+	mch::TrackFitter trackFitter;
+	mch::geo::TransformationCreator transformation;
+	mch::Track convertedTrack;
+	vector<mch::Track> mch_tracks;
+
+	double Reso_X = 0.0;
+	double Reso_Y = 0.0;
+	double ImproveCut = 6.0;
+
+	map<int, math_utils::Transform3D> transformOld;
+	map<int, math_utils::Transform3D> transformNew;
+
 
 	string inputConfig = fmt::format("rofs:MCH/CLUSTERROFS;clusters:MCH/CLUSTERS");
 	map<string, string> metadataRCT, headers;
@@ -155,22 +158,139 @@ struct mchClustersAOD
 	  	}		
 		}
 	
-	};
+	}
+
+	//_________________________________________________________________________________________________
+	Int_t GetDetElemNumber(Int_t iDetElemId) {
+	  // get det element number from ID
+	  // get chamber and element number in chamber
+	  const Int_t iCh = iDetElemId / 100;
+	  const Int_t iDet = iDetElemId % 100;
+
+	  // make sure detector index is valid
+	  if (!(iCh > 0 && iCh <= fgNCh && iDet < fgNDetElemCh[iCh - 1])) {
+	    LOG(fatal) << "Invalid detector element id: " << iDetElemId;
+	  }
+
+	  // add number of detectors up to this chamber
+	  return iDet + fgSNDetElemCh[iCh - 1];
+	}
+
+	//_________________________________________________________________________________________________
+	Int_t GetDetElemId(Int_t iDetElemNumber) {
+	  // make sure detector number is valid
+	  if (!(iDetElemNumber >= fgSNDetElemCh[0] &&
+	        iDetElemNumber < fgSNDetElemCh[fgNCh])) {
+	    LOG(fatal) << "Invalid detector element number: " << iDetElemNumber;
+	  }
+	  /// get det element number from ID
+	  // get chamber and element number in chamber
+	  int iCh = 0;
+	  int iDet = 0;
+	  for (int i = 1; i <= fgNCh; i++) {
+	    if (iDetElemNumber < fgSNDetElemCh[i]) {
+	      iCh = i;
+	      iDet = iDetElemNumber - fgSNDetElemCh[i - 1];
+	      break;
+	    }
+	  }
+
+	  // make sure detector index is valid
+	  if (!(iCh > 0 && iCh <= fgNCh && iDet < fgNDetElemCh[iCh - 1])) {
+	    LOG(fatal) << "Invalid detector element id: " << 100 * iCh + iDet;
+	  }
+
+	  // add number of detectors up to this chamber
+	  return 100 * iCh + iDet;
+	}
+
+	//_________________________________________________________________________________________________
+	bool RemoveTrack(mch::Track &track, double ImproveCut)
+	{
+	  double maxChi2Cluster = 2*ImproveCut*ImproveCut;
+	  bool removeTrack = false;
+
+	  try{
+	    trackFitter.fit(track, false);
+	  }catch(exception const& e){
+	    removeTrack = true;
+	    return removeTrack;
+	  }
+
+	  auto itStartingParam = std::prev(track.rend());
+
+	  while(true){
+	    try {
+	        trackFitter.fit(track, true, false, (itStartingParam == track.rbegin()) ? nullptr : &itStartingParam);
+	      } catch (exception const&) {
+	        removeTrack = true;
+	        break;
+	    }
+
+	    double worstLocalChi2 = -1.0;
+
+	    track.tagRemovableClusters(0x1F, false);
+	    auto itWorstParam = track.end();
+
+	    for(auto itParam = track.begin(); itParam != track.end(); ++itParam){
+	      if(itParam->getLocalChi2() > worstLocalChi2){
+	        worstLocalChi2 = itParam->getLocalChi2();
+	        itWorstParam = itParam;
+	      }
+	    }
+
+
+	    if(worstLocalChi2 < maxChi2Cluster) break;
+
+	    if(!itWorstParam->isRemovable()){
+	        removeTrack = true;
+	        track.removable();
+	        break;
+	    }
+
+
+
+	    auto itNextParam = track.removeParamAtCluster(itWorstParam);
+	    auto itNextToNextParam = (itNextParam == track.end()) ? itNextParam : std::next(itNextParam);
+	    itStartingParam = track.rbegin();
+
+
+	    if(track.getNClusters()<10){
+	      removeTrack = true;
+	      break;
+	    }else{
+	      while (itNextToNextParam != track.end()) {
+	        if (itNextToNextParam->getClusterPtr()->getChamberId() != itNextParam->getClusterPtr()->getChamberId()) {
+	          itStartingParam = std::make_reverse_iterator(++itNextParam);
+	          break;
+	        }
+	        ++itNextToNextParam;
+	      }
+	    }
+
+
+	  }
+
+	  if(!removeTrack){
+	    for (auto& param : track) {
+	        param.setParameters(param.getSmoothParameters());
+	        param.setCovariances(param.getSmoothCovariances());
+	    }
+	  }
+
+	  return removeTrack;
+
+	}
 	
 	template <typename TTrack, typename TClusters>
 	void runProcessTracks(TTrack const& track, TClusters const& clusters){
 
 		int clIndex = -1;
-		mch::Track convertedTrack;
 
 		for(auto& cluster : clusters){
-
+			if(!(track == cluster.fwdtrack())) continue;
 			LOG(info) << Form("%s%lld","Processing track: ",cluster.fwdtrack().globalIndex());
 			clIndex += 1;
-			LOG(info) << Form("%s%d","DEId: ",cluster.deId());
-			LOG(info) << Form("%s%f","pos x: ",cluster.x());
-			LOG(info) << Form("%s%f","pos y: ",cluster.y());
-			LOG(info) << Form("%s%f","pos z: ",cluster.z());
 
 			mch::Cluster* mch_cluster = new mch::Cluster();
 			mch_cluster->x = cluster.x();
@@ -190,32 +310,35 @@ struct mchClustersAOD
 				mch_cluster->y = master.y();
 				mch_cluster->z = master.z();
 			}
-		
-			uint32_t ClUId = mch::Cluster::buildUniqueId(int(cluster.deId()/100),cluster.deId()%100,clIndex);
+			
+	
+			uint32_t ClUId = mch::Cluster::buildUniqueId(int(cluster.deId()/100)-1,cluster.deId(),clIndex);
 			mch_cluster->uid = ClUId;
-			//std::cout << ClUId << std::endl;
 			std::cout << "Cluster index: " << mch::Cluster::getClusterIndex(ClUId) << std::endl;
-			//std::cout << "Chamber ID: " << mch::Cluster::getChamberId(ClUId) << std::endl;
-			//std::cout << "DEId: " << mch::Cluster::getDEId(ClUId) << std::endl;
+			std::cout << "Chamber ID: " << mch::Cluster::getChamberId(ClUId) << std::endl;
+			std::cout << "DEId: " << mch::Cluster::getDEId(ClUId) << std::endl;
 			mch_cluster->ex = cluster.isGoodX() ? 0.2 : 10.0;
 			mch_cluster->ey = cluster.isGoodY() ? 0.2 : 10.0;
+			
 			convertedTrack.createParamAtCluster(*mch_cluster);
 	
 		}
 
 		if(convertedTrack.getNClusters()>=9){
 			// Erase removable track
-			RemoveTrack(convertedTrack, ImproveCut); //mch_tracks.emplace_back(convertedTrack);
+			if(!RemoveTrack(convertedTrack, ImproveCut)) mch_tracks.push_back(*(new mch::Track(convertedTrack)));
 		}
 
 	}
 
 	void processTracks(aod::FwdTracks const& tracks, aod::FwdTrkCls const& clusters){
-		
+
+
 		for (const auto& track : tracks) {
       runProcessTracks(track, clusters);
     }
 
+    LOG(info) << "Saving mchtracks";
     TFile *FileAlign = TFile::Open(fOutputFileName.value.c_str(), "RECREATE");
 		FileAlign->cd();
 		FileAlign->WriteObjectAny(&mch_tracks, "std::vector<o2::mch::Track>", "mchtracks");
@@ -230,127 +353,4 @@ struct mchClustersAOD
 WorkflowSpec defineDataProcessing(ConfigContext const& cfgc)
 {
   return WorkflowSpec{adaptAnalysisTask<mchClustersAOD>(cfgc)};
-}
-
-
-//_________________________________________________________________________________________________
-Int_t GetDetElemNumber(Int_t iDetElemId) {
-  // get det element number from ID
-  // get chamber and element number in chamber
-  const Int_t iCh = iDetElemId / 100;
-  const Int_t iDet = iDetElemId % 100;
-
-  // make sure detector index is valid
-  if (!(iCh > 0 && iCh <= fgNCh && iDet < fgNDetElemCh[iCh - 1])) {
-    LOG(fatal) << "Invalid detector element id: " << iDetElemId;
-  }
-
-  // add number of detectors up to this chamber
-  return iDet + fgSNDetElemCh[iCh - 1];
-}
-
-//_________________________________________________________________________________________________
-Int_t GetDetElemId(Int_t iDetElemNumber) {
-  // make sure detector number is valid
-  if (!(iDetElemNumber >= fgSNDetElemCh[0] &&
-        iDetElemNumber < fgSNDetElemCh[fgNCh])) {
-    LOG(fatal) << "Invalid detector element number: " << iDetElemNumber;
-  }
-  /// get det element number from ID
-  // get chamber and element number in chamber
-  int iCh = 0;
-  int iDet = 0;
-  for (int i = 1; i <= fgNCh; i++) {
-    if (iDetElemNumber < fgSNDetElemCh[i]) {
-      iCh = i;
-      iDet = iDetElemNumber - fgSNDetElemCh[i - 1];
-      break;
-    }
-  }
-
-  // make sure detector index is valid
-  if (!(iCh > 0 && iCh <= fgNCh && iDet < fgNDetElemCh[iCh - 1])) {
-    LOG(fatal) << "Invalid detector element id: " << 100 * iCh + iDet;
-  }
-
-  // add number of detectors up to this chamber
-  return 100 * iCh + iDet;
-}
-
-//_________________________________________________________________________________________________
-bool RemoveTrack(mch::Track &track, double ImproveCut)
-{
-
-  double maxChi2Cluster = 2*ImproveCut*ImproveCut;
-  bool removeTrack = false;
-
-  try{
-    trackFitter.fit(track, false);
-  }catch(exception const& e){
-    removeTrack = true;
-    return removeTrack;
-  }
-
-  auto itStartingParam = std::prev(track.rend());
-
-  while(true){
-
-    try {
-        trackFitter.fit(track, true, false, (itStartingParam == track.rbegin()) ? nullptr : &itStartingParam);
-      } catch (exception const&) {
-        removeTrack = true;
-        break;
-    }
-
-    double worstLocalChi2 = -1.0;
-
-    track.tagRemovableClusters(0x1F, false);
-
-    auto itWorstParam = track.end();
-
-    for(auto itParam = track.begin(); itParam != track.end(); ++itParam){
-      if(itParam->getLocalChi2() > worstLocalChi2){
-        worstLocalChi2 = itParam->getLocalChi2();
-        itWorstParam = itParam;
-      }
-    }
-
-    if(worstLocalChi2 < maxChi2Cluster) break;
-
-    if(!itWorstParam->isRemovable()){
-        removeTrack = true;
-        track.removable();
-        break;
-    }
-
-
-    auto itNextParam = track.removeParamAtCluster(itWorstParam);
-    auto itNextToNextParam = (itNextParam == track.end()) ? itNextParam : std::next(itNextParam);
-    itStartingParam = track.rbegin();
-
-    if(track.getNClusters()<10){
-      removeTrack = true;
-      break;
-    }else{
-      while (itNextToNextParam != track.end()) {
-        if (itNextToNextParam->getClusterPtr()->getChamberId() != itNextParam->getClusterPtr()->getChamberId()) {
-          itStartingParam = std::make_reverse_iterator(++itNextParam);
-          break;
-        }
-        ++itNextToNextParam;
-      }
-    }
-
-
-  }
-
-  if(!removeTrack){
-    for (auto& param : track) {
-        param.setParameters(param.getSmoothParameters());
-        param.setCovariances(param.getSmoothCovariances());
-    }
-  }
-
-  return removeTrack;
-
 }
