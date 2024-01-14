@@ -41,6 +41,7 @@
 #include "DetectorsBase/GRPGeomHelper.h"
 #include "DetectorsBase/Propagator.h"
 #include "Framework/Logger.h"
+#include "Framework/CallbackService.h"
 #include "MCHGeometryTransformer/Transformations.h"
 #include "MCHMappingInterface/Segmentation.h"
 #include "MCHTracking/TrackExtrap.h"
@@ -48,6 +49,7 @@
 #include "ReconstructionDataFormats/TrackMCHMID.h"
 #include "CCDB/BasicCCDBManager.h"
 #include "CCDB/CcdbApi.h"
+#include "DPLUtils/RootTreeWriter.h"
 
 #include "SimulationDataFormat/MCCompLabel.h"
 #include "DataFormatsMCH/Cluster.h"
@@ -76,6 +78,7 @@ const int fgNCh = 10;
 const int fgNDetElemCh[fgNCh] = {4, 4, 4, 4, 18, 18, 26, 26, 26, 26};
 const int fgSNDetElemCh[fgNCh + 1] = {0,  4,  8,   12,  16, 34, 52, 78, 104, 130, 156};
 
+using Container = std::vector<o2::mch::Track>;
 
 struct mchClustersAOD
 { 
@@ -86,7 +89,6 @@ struct mchClustersAOD
 	TGeoManager* geo;
 	mch::TrackFitter trackFitter;
 	mch::geo::TransformationCreator transformation;
-	mch::Track convertedTrack;
 	vector<mch::Track> mch_tracks;
 
 	double Reso_X = 0.0;
@@ -109,7 +111,7 @@ struct mchClustersAOD
 	Configurable<string> fOutputFileName{"outfile", "mchtracks.root", "Name of output file"};
 
 	
-	void init(InitContext&){
+	void init(InitContext& ic){
 
 		//Load field and geometry informations here
 		ccdbApi.init(fConfigCcdbUrl.value);
@@ -157,6 +159,16 @@ struct mchClustersAOD
 	    		transformNew[iDEN] = transformation(iDEN);
 	  	}		
 		}
+		
+		ic.services().get<CallbackService>().set<CallbackService::Id::Stop>([this](){
+			LOG(info) << "Saving mchtracks into ROOT file";
+			TFile *FileAlign = TFile::Open(fOutputFileName.value.c_str(), "RECREATE");
+			FileAlign->cd();
+			FileAlign->WriteObjectAny(&mch_tracks, "std::vector<o2::mch::Track>", "mchtracks");
+			FileAlign->Close();
+
+		});
+		
 	
 	}
 
@@ -286,10 +298,10 @@ struct mchClustersAOD
 	void runProcessTracks(TTrack const& track, TClusters const& clusters){
 
 		int clIndex = -1;
+		mch::Track convertedTrack;
 
 		for(auto& cluster : clusters){
-			if(!(track == cluster.fwdtrack())) continue;
-			LOG(info) << Form("%s%lld","Processing track: ",cluster.fwdtrack().globalIndex());
+
 			clIndex += 1;
 
 			mch::Cluster* mch_cluster = new mch::Cluster();
@@ -314,9 +326,6 @@ struct mchClustersAOD
 	
 			uint32_t ClUId = mch::Cluster::buildUniqueId(int(cluster.deId()/100)-1,cluster.deId(),clIndex);
 			mch_cluster->uid = ClUId;
-			std::cout << "Cluster index: " << mch::Cluster::getClusterIndex(ClUId) << std::endl;
-			std::cout << "Chamber ID: " << mch::Cluster::getChamberId(ClUId) << std::endl;
-			std::cout << "DEId: " << mch::Cluster::getDEId(ClUId) << std::endl;
 			mch_cluster->ex = cluster.isGoodX() ? 0.2 : 10.0;
 			mch_cluster->ey = cluster.isGoodY() ? 0.2 : 10.0;
 			
@@ -326,27 +335,20 @@ struct mchClustersAOD
 
 		if(convertedTrack.getNClusters()>=9){
 			// Erase removable track
-			if(!RemoveTrack(convertedTrack, ImproveCut)) mch_tracks.push_back(*(new mch::Track(convertedTrack)));
+			if(!RemoveTrack(convertedTrack, ImproveCut)) mch_tracks.emplace_back(convertedTrack);
+			
 		}
 
 	}
 
-	void processTracks(aod::FwdTracks const& tracks, aod::FwdTrkCls const& clusters){
+	void processTracks(aod::FwdTracks::iterator const& track, aod::FwdTrkCls const& clusters){
 
-
-		for (const auto& track : tracks) {
-      runProcessTracks(track, clusters);
-    }
-
-    LOG(info) << "Saving mchtracks";
-    TFile *FileAlign = TFile::Open(fOutputFileName.value.c_str(), "RECREATE");
-		FileAlign->cd();
-		FileAlign->WriteObjectAny(&mch_tracks, "std::vector<o2::mch::Track>", "mchtracks");
-		FileAlign->Close();
+    runProcessTracks(track, clusters);
 
 	}
 
 	PROCESS_SWITCH(mchClustersAOD, processTracks, "Process tracks", true);
+
 	
 };
 
