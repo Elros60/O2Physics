@@ -342,9 +342,7 @@ struct mchClustersAOD
 	}
 
 	void processTracks(aod::FwdTracks::iterator const& track, aod::FwdTrkCls const& clusters){
-
     runProcessTracks(track, clusters);
-
 	}
 
 	PROCESS_SWITCH(mchClustersAOD, processTracks, "Process tracks", true);
