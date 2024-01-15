@@ -29,6 +29,7 @@
 #include <TGraphErrors.h>
 #include <TLine.h>
 #include <TSystem.h>
+#include <TStopwatch.h>
 
 #include "CommonConstants/LHCConstants.h"
 #include "CommonUtils/NameConf.h"
@@ -90,6 +91,7 @@ struct mchClustersAOD
 	mch::TrackFitter trackFitter;
 	mch::geo::TransformationCreator transformation;
 	vector<mch::Track> mch_tracks;
+	TStopwatch sw;
 
 	double Reso_X = 0.0;
 	double Reso_Y = 0.0;
@@ -159,6 +161,9 @@ struct mchClustersAOD
 	    		transformNew[iDEN] = transformation(iDEN);
 	  	}		
 		}
+
+		sw.Stop();
+		sw.Start(false);
 		
 		ic.services().get<CallbackService>().set<CallbackService::Id::Stop>([this](){
 			LOG(info) << "Saving mchtracks into ROOT file";
@@ -166,6 +171,8 @@ struct mchClustersAOD
 			FileAlign->cd();
 			FileAlign->WriteObjectAny(&mch_tracks, "std::vector<o2::mch::Track>", "mchtracks");
 			FileAlign->Close();
+			sw.Stop();
+			LOG(info) << "CPU time: " << sw.CpuTime();
 
 		});
 		
@@ -326,6 +333,7 @@ struct mchClustersAOD
 	
 			uint32_t ClUId = mch::Cluster::buildUniqueId(int(cluster.deId()/100)-1,cluster.deId(),clIndex);
 			mch_cluster->uid = ClUId;
+
 			mch_cluster->ex = cluster.isGoodX() ? 0.2 : 10.0;
 			mch_cluster->ey = cluster.isGoodY() ? 0.2 : 10.0;
 			
