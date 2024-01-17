@@ -35,6 +35,24 @@ V0PhotonCut* o2::aod::pcmcuts::GetCut(const char* cutName)
     cut->SetRxyRange(1, 90);
     return cut;
   }
+  if (!nameStr.compare("qc_lc")) { // qc for late conversion
+    // for track
+    cut->SetTrackPtRange(0.02f, 1e10f);
+    // cut->SetTrackEtaRange(-0.9, +0.9);
+    cut->SetMinNCrossedRowsTPC(20);
+    cut->SetMinNCrossedRowsOverFindableClustersTPC(0.8);
+    cut->SetChi2PerClusterTPC(0.0, 4.0);
+    cut->SetTPCNsigmaElRange(-3, +3);
+    cut->SetIsWithinBeamPipe(true);
+    // for v0
+    cut->SetV0PtRange(0.1f, 1e10f);
+    cut->SetV0EtaRange(-0.9, +0.9);
+    cut->SetMinCosPA(0.99);
+    cut->SetMaxPCA(1.5);
+    cut->SetRxyRange(42, 90);
+    cut->SetAPRange(0.95, 0.01);
+    return cut;
+  }
   if (!nameStr.compare("qc")) {
     // for track
     cut->SetTrackPtRange(0.02f, 1e10f);
@@ -241,7 +259,7 @@ DalitzEECut* o2::aod::dalitzeecuts::GetCut(const char* cutName)
     cut->SetMinNCrossedRowsOverFindableClustersTPC(0.8);
     cut->SetChi2PerClusterTPC(0.0, 4.0);
     cut->SetChi2PerClusterITS(0.0, 5.0);
-    cut->SetNClustersITS(4, 7);
+    cut->SetNClustersITS(5, 7);
     cut->SetMaxDcaXY(1.0);
     cut->SetMaxDcaZ(1.0);
 
@@ -268,7 +286,7 @@ DalitzEECut* o2::aod::dalitzeecuts::GetCut(const char* cutName)
     cut->SetMinNCrossedRowsOverFindableClustersTPC(0.8);
     cut->SetChi2PerClusterTPC(0.0, 4.0);
     cut->SetChi2PerClusterITS(0.0, 5.0);
-    cut->SetNClustersITS(4, 7);
+    cut->SetNClustersITS(5, 7);
     cut->SetMaxDcaXY(1.0);
     cut->SetMaxDcaZ(1.0);
 
@@ -297,7 +315,7 @@ DalitzEECut* o2::aod::dalitzeecuts::GetCut(const char* cutName)
     cut->SetMinNCrossedRowsOverFindableClustersTPC(0.8);
     cut->SetChi2PerClusterTPC(0.0, 4.0);
     cut->SetChi2PerClusterITS(0.0, 5.0);
-    cut->SetNClustersITS(4, 7);
+    cut->SetNClustersITS(5, 7);
     cut->SetMaxDcaXY(1.0);
     cut->SetMaxDcaZ(1.0);
 
@@ -326,7 +344,7 @@ DalitzEECut* o2::aod::dalitzeecuts::GetCut(const char* cutName)
     cut->SetMinNCrossedRowsOverFindableClustersTPC(0.8);
     cut->SetChi2PerClusterTPC(0.0, 4.0);
     cut->SetChi2PerClusterITS(0.0, 5.0);
-    cut->SetNClustersITS(4, 7);
+    cut->SetNClustersITS(5, 7);
     cut->SetDca3DRange(0.0, 1.0);
 
     // for PID
@@ -354,7 +372,7 @@ DalitzEECut* o2::aod::dalitzeecuts::GetCut(const char* cutName)
     cut->SetMinNCrossedRowsOverFindableClustersTPC(0.8);
     cut->SetChi2PerClusterTPC(0.0, 4.0);
     cut->SetChi2PerClusterITS(0.0, 5.0);
-    cut->SetNClustersITS(4, 7);
+    cut->SetNClustersITS(5, 7);
     cut->SetDca3DRange(2.0, 1e+10);
 
     // for PID
@@ -382,7 +400,7 @@ DalitzEECut* o2::aod::dalitzeecuts::GetCut(const char* cutName)
     cut->SetMinNCrossedRowsOverFindableClustersTPC(0.8);
     cut->SetChi2PerClusterTPC(0.0, 4.0);
     cut->SetChi2PerClusterITS(0.0, 5.0);
-    cut->SetNClustersITS(4, 7);
+    cut->SetNClustersITS(5, 7);
     cut->SetMaxDcaXY(1.0);
     cut->SetMaxDcaZ(1.0);
 
@@ -412,7 +430,7 @@ DalitzEECut* o2::aod::dalitzeecuts::GetCut(const char* cutName)
     cut->SetMinNCrossedRowsOverFindableClustersTPC(0.8);
     cut->SetChi2PerClusterTPC(0.0, 4.0);
     cut->SetChi2PerClusterITS(0.0, 5.0);
-    cut->SetNClustersITS(4, 7);
+    cut->SetNClustersITS(5, 7);
     cut->SetMaxDcaXY(1.0);
     cut->SetMaxDcaZ(1.0);
 
@@ -437,7 +455,7 @@ DalitzEECut* o2::aod::dalitzeecuts::GetCut(const char* cutName)
     cut->SetMinNCrossedRowsOverFindableClustersTPC(0.8);
     cut->SetChi2PerClusterTPC(0.0, 4.0);
     cut->SetChi2PerClusterITS(0.0, 5.0);
-    cut->SetNClustersITS(4, 7);
+    cut->SetNClustersITS(5, 7);
     cut->SetMaxDcaXY(1.0);
     cut->SetMaxDcaZ(1.0);
 
@@ -455,11 +473,11 @@ DalitzEECut* o2::aod::dalitzeecuts::GetCut(const char* cutName)
     // for track
     cut->SetTrackPtRange(0.2f, 1e10f);
     cut->SetTrackEtaRange(-0.9, +0.9);
-    cut->SetMinNCrossedRowsTPC(80);
+    cut->SetMinNCrossedRowsTPC(100);
     cut->SetMinNCrossedRowsOverFindableClustersTPC(0.8);
     cut->SetChi2PerClusterTPC(0.0, 4.0);
     cut->SetChi2PerClusterITS(0.0, 5.0);
-    cut->SetNClustersITS(4, 7);
+    cut->SetNClustersITS(5, 7);
     cut->SetMaxDcaXY(1.0);
     cut->SetMaxDcaZ(1.0);
 
@@ -480,11 +498,11 @@ DalitzEECut* o2::aod::dalitzeecuts::GetCut(const char* cutName)
     // for track
     cut->SetTrackPtRange(0.2f, 1e10f);
     cut->SetTrackEtaRange(-0.9, +0.9);
-    cut->SetMinNCrossedRowsTPC(80);
+    cut->SetMinNCrossedRowsTPC(100);
     cut->SetMinNCrossedRowsOverFindableClustersTPC(0.8);
     cut->SetChi2PerClusterTPC(0.0, 4.0);
     cut->SetChi2PerClusterITS(0.0, 5.0);
-    cut->SetNClustersITS(4, 7);
+    cut->SetNClustersITS(5, 7);
     cut->SetMaxDcaXY(1.0);
     cut->SetMaxDcaZ(1.0);
 
@@ -505,11 +523,11 @@ DalitzEECut* o2::aod::dalitzeecuts::GetCut(const char* cutName)
     // for track
     cut->SetTrackPtRange(0.2f, 1e10f);
     cut->SetTrackEtaRange(-0.9, +0.9);
-    cut->SetMinNCrossedRowsTPC(80);
+    cut->SetMinNCrossedRowsTPC(100);
     cut->SetMinNCrossedRowsOverFindableClustersTPC(0.8);
     cut->SetChi2PerClusterTPC(0.0, 4.0);
     cut->SetChi2PerClusterITS(0.0, 5.0);
-    cut->SetNClustersITS(4, 7);
+    cut->SetNClustersITS(5, 7);
     cut->SetMaxDcaXY(1.0);
     cut->SetMaxDcaZ(1.0);
 
@@ -531,7 +549,7 @@ DalitzEECut* o2::aod::dalitzeecuts::GetCut(const char* cutName)
     cut->SetMinNCrossedRowsOverFindableClustersTPC(0.8);
     cut->SetChi2PerClusterTPC(0.0, 4.0);
     cut->SetChi2PerClusterITS(0.0, 5.0);
-    cut->SetNClustersITS(4, 7);
+    cut->SetNClustersITS(5, 7);
     cut->SetMaxDcaXY(1.0);
     cut->SetMaxDcaZ(1.0);
 
@@ -554,7 +572,7 @@ DalitzEECut* o2::aod::dalitzeecuts::GetCut(const char* cutName)
     cut->SetMinNCrossedRowsOverFindableClustersTPC(0.8);
     cut->SetChi2PerClusterTPC(0.0, 4.0);
     cut->SetChi2PerClusterITS(0.0, 5.0);
-    cut->SetNClustersITS(4, 7);
+    cut->SetNClustersITS(5, 7);
     cut->SetMaxDcaXY(1.0);
     cut->SetMaxDcaZ(1.0);
 
@@ -579,7 +597,7 @@ DalitzEECut* o2::aod::dalitzeecuts::GetCut(const char* cutName)
     cut->SetMinNCrossedRowsOverFindableClustersTPC(0.8);
     cut->SetChi2PerClusterTPC(0.0, 4.0);
     cut->SetChi2PerClusterITS(0.0, 5.0);
-    cut->SetNClustersITS(4, 7);
+    cut->SetNClustersITS(5, 7);
     cut->SetMaxDcaXY(1.0);
     cut->SetMaxDcaZ(1.0);
 
@@ -602,7 +620,7 @@ DalitzEECut* o2::aod::dalitzeecuts::GetCut(const char* cutName)
     cut->SetMinNCrossedRowsOverFindableClustersTPC(0.8);
     cut->SetChi2PerClusterTPC(0.0, 4.0);
     cut->SetChi2PerClusterITS(0.0, 5.0);
-    cut->SetNClustersITS(4, 7);
+    cut->SetNClustersITS(5, 7);
     cut->SetMaxDcaXY(1.0);
     cut->SetMaxDcaZ(1.0);
 
@@ -627,7 +645,7 @@ DalitzEECut* o2::aod::dalitzeecuts::GetCut(const char* cutName)
     cut->SetMinNCrossedRowsOverFindableClustersTPC(0.8);
     cut->SetChi2PerClusterTPC(0.0, 4.0);
     cut->SetChi2PerClusterITS(0.0, 5.0);
-    cut->SetNClustersITS(4, 7);
+    cut->SetNClustersITS(5, 7);
     cut->SetMaxDcaXY(1.0);
     cut->SetMaxDcaZ(1.0);
 
@@ -652,7 +670,7 @@ DalitzEECut* o2::aod::dalitzeecuts::GetCut(const char* cutName)
     cut->SetMinNCrossedRowsOverFindableClustersTPC(0.8);
     cut->SetChi2PerClusterTPC(0.0, 4.0);
     cut->SetChi2PerClusterITS(0.0, 5.0);
-    cut->SetNClustersITS(4, 7);
+    cut->SetNClustersITS(5, 7);
     cut->SetMaxDcaXY(1.0);
     cut->SetMaxDcaZ(1.0);
 
@@ -675,7 +693,7 @@ DalitzEECut* o2::aod::dalitzeecuts::GetCut(const char* cutName)
     cut->SetMinNCrossedRowsOverFindableClustersTPC(0.8);
     cut->SetChi2PerClusterTPC(0.0, 4.0);
     cut->SetChi2PerClusterITS(0.0, 5.0);
-    cut->SetNClustersITS(4, 7);
+    cut->SetNClustersITS(5, 7);
     cut->SetMaxDcaXY(1.0);
     cut->SetMaxDcaZ(1.0);
 
@@ -700,7 +718,7 @@ DalitzEECut* o2::aod::dalitzeecuts::GetCut(const char* cutName)
     cut->SetMinNCrossedRowsOverFindableClustersTPC(0.8);
     cut->SetChi2PerClusterTPC(0.0, 4.0);
     cut->SetChi2PerClusterITS(0.0, 5.0);
-    cut->SetNClustersITS(4, 7);
+    cut->SetNClustersITS(5, 7);
     cut->SetMaxDcaXY(1.0);
     cut->SetMaxDcaZ(1.0);
 
@@ -730,7 +748,7 @@ DalitzEECut* o2::aod::dalitzeecuts::GetCut(const char* cutName)
     cut->SetMinNCrossedRowsOverFindableClustersTPC(0.8);
     cut->SetChi2PerClusterTPC(0.0, 4.0);
     cut->SetChi2PerClusterITS(0.0, 5.0);
-    cut->SetNClustersITS(4, 7);
+    cut->SetNClustersITS(5, 7);
     cut->SetMaxDcaXY(1.0);
     cut->SetMaxDcaZ(1.0);
 
@@ -760,7 +778,7 @@ DalitzEECut* o2::aod::dalitzeecuts::GetCut(const char* cutName)
     cut->SetMinNCrossedRowsOverFindableClustersTPC(0.8);
     cut->SetChi2PerClusterTPC(0.0, 4.0);
     cut->SetChi2PerClusterITS(0.0, 5.0);
-    cut->SetNClustersITS(4, 7);
+    cut->SetNClustersITS(5, 7);
     cut->SetMaxDcaXY(1.0);
     cut->SetMaxDcaZ(1.0);
 
@@ -789,7 +807,7 @@ DalitzEECut* o2::aod::dalitzeecuts::GetCut(const char* cutName)
     cut->SetMinNCrossedRowsOverFindableClustersTPC(0.8);
     cut->SetChi2PerClusterTPC(0.0, 4.0);
     cut->SetChi2PerClusterITS(0.0, 5.0);
-    cut->SetNClustersITS(4, 7);
+    cut->SetNClustersITS(5, 7);
     cut->SetMaxDcaXY(1.0);
     cut->SetMaxDcaZ(1.0);
 
@@ -817,7 +835,7 @@ DalitzEECut* o2::aod::dalitzeecuts::GetCut(const char* cutName)
     cut->SetMinNCrossedRowsOverFindableClustersTPC(0.8);
     cut->SetChi2PerClusterTPC(0.0, 4.0);
     cut->SetChi2PerClusterITS(0.0, 5.0);
-    cut->SetNClustersITS(4, 7);
+    cut->SetNClustersITS(5, 7);
     cut->SetMaxDcaXY(1.0);
     cut->SetMaxDcaZ(1.0);
 
@@ -845,7 +863,7 @@ DalitzEECut* o2::aod::dalitzeecuts::GetCut(const char* cutName)
     cut->SetMinNCrossedRowsOverFindableClustersTPC(0.8);
     cut->SetChi2PerClusterTPC(0.0, 4.0);
     cut->SetChi2PerClusterITS(0.0, 5.0);
-    cut->SetNClustersITS(4, 7);
+    cut->SetNClustersITS(5, 7);
     cut->SetMaxDcaXY(1.0);
     cut->SetMaxDcaZ(1.0);
 
@@ -873,7 +891,7 @@ DalitzEECut* o2::aod::dalitzeecuts::GetCut(const char* cutName)
     cut->SetMinNCrossedRowsOverFindableClustersTPC(0.8);
     cut->SetChi2PerClusterTPC(0.0, 4.0);
     cut->SetChi2PerClusterITS(0.0, 5.0);
-    cut->SetNClustersITS(4, 7);
+    cut->SetNClustersITS(5, 7);
     cut->SetMaxDcaXY(1.0);
     cut->SetMaxDcaZ(1.0);
 
@@ -897,7 +915,7 @@ DalitzEECut* o2::aod::dalitzeecuts::GetCut(const char* cutName)
     cut->SetMinNCrossedRowsOverFindableClustersTPC(0.8);
     cut->SetChi2PerClusterTPC(0.0, 4.0);
     cut->SetChi2PerClusterITS(0.0, 5.0);
-    cut->SetNClustersITS(4, 7);
+    cut->SetNClustersITS(5, 7);
     cut->SetMaxDcaXY(1.0);
     cut->SetMaxDcaZ(1.0);
 
@@ -919,11 +937,11 @@ DalitzEECut* o2::aod::dalitzeecuts::GetCut(const char* cutName)
     // for track
     cut->SetTrackPtRange(0.2f, 1e10f);
     cut->SetTrackEtaRange(-0.9, +0.9);
-    cut->SetMinNCrossedRowsTPC(80);
+    cut->SetMinNCrossedRowsTPC(100);
     cut->SetMinNCrossedRowsOverFindableClustersTPC(0.8);
     cut->SetChi2PerClusterTPC(0.0, 4.0);
     cut->SetChi2PerClusterITS(0.0, 5.0);
-    cut->SetNClustersITS(4, 7);
+    cut->SetNClustersITS(5, 7);
     cut->SetMaxDcaXY(1.0);
     cut->SetMaxDcaZ(1.0);
 
@@ -946,12 +964,12 @@ DalitzEECut* o2::aod::dalitzeecuts::GetCut(const char* cutName)
     // for track
     cut->SetTrackPtRange(0.2f, 1e10f);
     cut->SetTrackEtaRange(-0.9, +0.9);
-    cut->SetMinNCrossedRowsTPC(80);
+    cut->SetMinNCrossedRowsTPC(100);
     cut->SetMinNCrossedRowsOverFindableClustersTPC(0.8);
     cut->SetChi2PerClusterTPC(0.0, 4.0);
     cut->SetChi2PerClusterITS(0.0, 5.0);
-    cut->SetNClustersITS(4, 7);
-    cut->SetDca3DRange(0.0, 1.0); // in sigma
+    cut->SetNClustersITS(5, 7);
+    cut->SetDca3DRange(0.0, 0.6); // in sigma
 
     // for PID
     cut->SetPIDScheme(DalitzEECut::PIDSchemes::kTPChadrejORTOFreq);
@@ -972,11 +990,11 @@ DalitzEECut* o2::aod::dalitzeecuts::GetCut(const char* cutName)
     // for track
     cut->SetTrackPtRange(0.2f, 1e10f);
     cut->SetTrackEtaRange(-0.9, +0.9);
-    cut->SetMinNCrossedRowsTPC(80);
+    cut->SetMinNCrossedRowsTPC(100);
     cut->SetMinNCrossedRowsOverFindableClustersTPC(0.8);
     cut->SetChi2PerClusterTPC(0.0, 4.0);
     cut->SetChi2PerClusterITS(0.0, 5.0);
-    cut->SetNClustersITS(4, 7);
+    cut->SetNClustersITS(5, 7);
     cut->SetDca3DRange(2.0, 1e+10); // in sigma
 
     // for PID
@@ -999,11 +1017,11 @@ DalitzEECut* o2::aod::dalitzeecuts::GetCut(const char* cutName)
     // for track
     cut->SetTrackPtRange(0.2f, 1e10f);
     cut->SetTrackEtaRange(-0.9, +0.9);
-    cut->SetMinNCrossedRowsTPC(80);
+    cut->SetMinNCrossedRowsTPC(100);
     cut->SetMinNCrossedRowsOverFindableClustersTPC(0.8);
     cut->SetChi2PerClusterTPC(0.0, 4.0);
     cut->SetChi2PerClusterITS(0.0, 5.0);
-    cut->SetNClustersITS(4, 7);
+    cut->SetNClustersITS(5, 7);
     cut->SetMaxDcaXY(1.0);
     cut->SetMaxDcaZ(1.0);
 
@@ -1024,11 +1042,11 @@ DalitzEECut* o2::aod::dalitzeecuts::GetCut(const char* cutName)
     // for track
     cut->SetTrackPtRange(0.2f, 1e10f);
     cut->SetTrackEtaRange(-0.9, +0.9);
-    cut->SetMinNCrossedRowsTPC(80);
+    cut->SetMinNCrossedRowsTPC(100);
     cut->SetMinNCrossedRowsOverFindableClustersTPC(0.8);
     cut->SetChi2PerClusterTPC(0.0, 4.0);
     cut->SetChi2PerClusterITS(0.0, 5.0);
-    cut->SetNClustersITS(4, 7);
+    cut->SetNClustersITS(5, 7);
     cut->SetMaxDcaXY(1.0);
     cut->SetMaxDcaZ(1.0);
 
@@ -1052,11 +1070,11 @@ DalitzEECut* o2::aod::dalitzeecuts::GetCut(const char* cutName)
     // for track
     cut->SetTrackPtRange(0.2f, 1e10f);
     cut->SetTrackEtaRange(-0.9, +0.9);
-    cut->SetMinNCrossedRowsTPC(80);
+    cut->SetMinNCrossedRowsTPC(100);
     cut->SetMinNCrossedRowsOverFindableClustersTPC(0.8);
     cut->SetChi2PerClusterTPC(0.0, 4.0);
     cut->SetChi2PerClusterITS(0.0, 5.0);
-    cut->SetNClustersITS(4, 7);
+    cut->SetNClustersITS(5, 7);
     cut->SetMaxDcaXY(1.0);
     cut->SetMaxDcaZ(1.0);
 
@@ -1080,11 +1098,11 @@ DalitzEECut* o2::aod::dalitzeecuts::GetCut(const char* cutName)
     // for track
     cut->SetTrackPtRange(0.2f, 1e10f);
     cut->SetTrackEtaRange(-0.9, +0.9);
-    cut->SetMinNCrossedRowsTPC(80);
+    cut->SetMinNCrossedRowsTPC(100);
     cut->SetMinNCrossedRowsOverFindableClustersTPC(0.8);
     cut->SetChi2PerClusterTPC(0.0, 4.0);
     cut->SetChi2PerClusterITS(0.0, 5.0);
-    cut->SetNClustersITS(4, 7);
+    cut->SetNClustersITS(5, 7);
     cut->SetMaxDcaXY(1.0);
     cut->SetMaxDcaZ(1.0);
 
@@ -1103,11 +1121,11 @@ DalitzEECut* o2::aod::dalitzeecuts::GetCut(const char* cutName)
     // for track
     cut->SetTrackPtRange(0.01f, 1e10f);
     cut->SetTrackEtaRange(-0.9, +0.9);
-    cut->SetMinNCrossedRowsTPC(80);
+    cut->SetMinNCrossedRowsTPC(100);
     cut->SetMinNCrossedRowsOverFindableClustersTPC(0.8);
     cut->SetChi2PerClusterTPC(0.0, 4.0);
     cut->SetChi2PerClusterITS(0.0, 5.0);
-    cut->SetNClustersITS(4, 7);
+    cut->SetNClustersITS(5, 7);
     cut->SetMaxDcaXY(1.0);
     cut->SetMaxDcaZ(1.0);
     return cut;
