@@ -75,5 +75,6 @@ o2physics_add_dpl_workflow(task-mchclusters
                         O2::DataFormatsMCH
                         O2::DetectorsBase
                         O2::MCHGeometryTransformer
-                        O2::MathUtils 
+                        O2::MathUtils
+                        O2::MCHAlign 
                     COMPONENT_NAME Analysis)

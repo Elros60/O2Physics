@@ -58,6 +58,7 @@
 #include "MCHTracking/TrackExtrap.h"
 #include "MCHTracking/TrackParam.h"
 #include "MCHTracking/TrackFitter.h"
+#include "MCHAlign/Alignment.h"
 
 #include "DetectorsCommonDataFormats/AlignParam.h"
 #include "DetectorsCommonDataFormats/DetID.h"
@@ -69,15 +70,9 @@ using namespace o2::framework;
 using namespace o2::framework::expressions;
 using namespace std;
 
-/*
-Int_t GetDetElemNumber(Int_t iDetElemId);
-Int_t GetDetElemId(Int_t iDetElemNumber);
-bool RemoveTrack(mch::Track &track, double ImproveCut);
-*/
-
 const int fgNCh = 10;
 const int fgNDetElemCh[fgNCh] = {4, 4, 4, 4, 18, 18, 26, 26, 26, 26};
-const int fgSNDetElemCh[fgNCh + 1] = {0,  4,  8,   12,  16, 34, 52, 78, 104, 130, 156};
+const int fgSNDetElemCh[fgNCh + 1] = {0, 4, 8, 12, 16, 34, 52, 78, 104, 130, 156};
 
 using Container = std::vector<o2::mch::Track>;
 
@@ -90,8 +85,9 @@ struct mchClustersAOD
 	TGeoManager* geo;
 	mch::TrackFitter trackFitter;
 	mch::geo::TransformationCreator transformation;
-	vector<mch::Track> mch_tracks;
+	mch::Alignment mAlign{};
 	TStopwatch sw;
+	Double_t weightRecord{1.0};
 
 	double Reso_X = 0.0;
 	double Reso_Y = 0.0;
@@ -107,6 +103,7 @@ struct mchClustersAOD
 
 	Configurable<string> fConfigCcdbUrl{"ccdb-url", "http://alice-ccdb.cern.ch", "url of the ccdb repository"};
 	Configurable<string> fConfigColType{"collision-type", "pp", "Resolution specification for trackfitter"};
+	Configurable<string> fFixChamber{"fix-chamber", "", "Fixing chamber"};
 	Configurable<int> fRunNumber{"run-number", 539483, "Run number"};
 	Configurable<bool> fDoNewGeo{"do-realign", false, "Transform to a given new geometry"};
 	Configurable<string> fConfigNewGeoFile{"new-geo", "o2sim_geometry-aligned.root", "New geometry for transformation"};
@@ -125,6 +122,7 @@ struct mchClustersAOD
 		base::Propagator::initFieldFromGRP(grpmag);
 		mch::TrackExtrap::setField();
   	mch::TrackExtrap::useExtrapV2();
+  	mAlign.SetBFieldOn(mch::TrackExtrap::isFieldON());
  
 		trackFitter.initField(grpmag->getL3Current(), grpmag->getDipoleCurrent());
 		trackFitter.smoothTracks(true);
@@ -143,6 +141,23 @@ struct mchClustersAOD
 
 		trackFitter.setChamberResolution(Reso_X, Reso_Y);
 		trackFitter.useChamberResolution();
+
+		mAlign.SetDoEvaluation(kFALSE);
+		mAlign.SetAllowedVariation(0, 2.0);
+		mAlign.SetAllowedVariation(1, 0.3);
+		mAlign.SetAllowedVariation(2, 0.002);
+		mAlign.SetAllowedVariation(3, 2.0);
+
+		// Fix chambers
+		auto chambers = fFixChamber.value;
+		for (int i = 0; i < chambers.length(); ++i) {
+			if(chambers[i]==',') continue;
+			int chamber = chambers[i] - '0';
+			LOG(info) << Form("%s%d","Fixing chamber: ",chamber);
+			mAlign.FixChamber(chamber);
+		}
+
+		mAlign.init("recDataFile.root", "recConsFile.root", false);
 
 		//Load reference geometry
 		geo = ccdb->getForTimeStamp<TGeoManager>("GLO/Config/GeometryAligned", ts);
@@ -166,11 +181,8 @@ struct mchClustersAOD
 		sw.Start(false);
 		
 		ic.services().get<CallbackService>().set<CallbackService::Id::Stop>([this](){
-			LOG(info) << "Saving mchtracks into ROOT file";
-			TFile *FileAlign = TFile::Open(fOutputFileName.value.c_str(), "RECREATE");
-			FileAlign->cd();
-			FileAlign->WriteObjectAny(&mch_tracks, "std::vector<o2::mch::Track>", "mchtracks");
-			FileAlign->Close();
+			LOG(info) << "Saving records into ROOT file";
+			mAlign.terminate();
 			sw.Stop();
 			LOG(info) << "CPU time: " << sw.CpuTime();
 
@@ -343,7 +355,9 @@ struct mchClustersAOD
 
 		if(convertedTrack.getNClusters()>=9){
 			// Erase removable track
-			if(!RemoveTrack(convertedTrack, ImproveCut)) mch_tracks.emplace_back(convertedTrack);
+			if(!RemoveTrack(convertedTrack, ImproveCut)){
+				mAlign.ProcessTrack(convertedTrack, transformation, true, weightRecord);
+			}
 			
 		}
 
