@@ -58,7 +58,7 @@
 #include "MCHTracking/TrackExtrap.h"
 #include "MCHTracking/TrackParam.h"
 #include "MCHTracking/TrackFitter.h"
-#include "MCHAlign/Alignment.h"
+#include "MCHAlign/Aligner.h"
 
 #include "DetectorsCommonDataFormats/AlignParam.h"
 #include "DetectorsCommonDataFormats/DetID.h"
@@ -85,7 +85,7 @@ struct mchClustersAOD
 	TGeoManager* geo;
 	mch::TrackFitter trackFitter;
 	mch::geo::TransformationCreator transformation;
-	mch::Alignment mAlign{};
+	mch::Aligner mAlign{};
 	TStopwatch sw;
 	Double_t weightRecord{1.0};
 
