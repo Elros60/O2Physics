@@ -157,7 +157,7 @@ struct mchClustersAOD
 			mAlign.FixChamber(chamber);
 		}
 
-		mAlign.init("recDataFile.root", "recConsFile.root", false);
+		mAlign.init("recDataFile.root", "recConsFile.root");
 
 		//Load reference geometry
 		geo = ccdb->getForTimeStamp<TGeoManager>("GLO/Config/GeometryAligned", ts);
