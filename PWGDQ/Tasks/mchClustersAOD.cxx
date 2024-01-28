@@ -107,7 +107,8 @@ struct mchClustersAOD
 	Configurable<int> fRunNumber{"run-number", 539483, "Run number"};
 	Configurable<bool> fDoNewGeo{"do-realign", false, "Transform to a given new geometry"};
 	Configurable<string> fConfigNewGeoFile{"new-geo", "o2sim_geometry-aligned.root", "New geometry for transformation"};
-	Configurable<string> fOutputFileName{"outfile", "mchtracks.root", "Name of output file"};
+	Configurable<string> fOutputRecFileName{"outfile-data", "recDataFile.root", "Name of output data record file"};
+	Configurable<string> fOutputConsFileName{"outfile-constraint", "recConsFile.root", "Name of output constraint record file"};
 
 	
 	void init(InitContext& ic){
@@ -157,7 +158,7 @@ struct mchClustersAOD
 			mAlign.FixChamber(chamber);
 		}
 
-		mAlign.init("recDataFile.root", "recConsFile.root");
+		mAlign.init(fOutputRecFileName.value, fOutputConsFileName.value);
 
 		//Load reference geometry
 		geo = ccdb->getForTimeStamp<TGeoManager>("GLO/Config/GeometryAligned", ts);
