@@ -106,6 +106,7 @@ struct mchClustersAOD
 	Configurable<string> fFixChamber{"fix-chamber", "", "Fixing chamber"};
 	Configurable<int> fRunNumber{"run-number", 539483, "Run number"};
 	Configurable<bool> fDoNewGeo{"do-realign", false, "Transform to a given new geometry"};
+	Configurable<bool> fDoEvaluation{"do-evaluation", false, "Enable storage of residuals"};
 	Configurable<string> fConfigNewGeoFile{"new-geo", "o2sim_geometry-aligned.root", "New geometry for transformation"};
 	Configurable<string> fOutputRecFileName{"outfile-data", "recDataFile.root", "Name of output data record file"};
 	Configurable<string> fOutputConsFileName{"outfile-constraint", "recConsFile.root", "Name of output constraint record file"};
@@ -143,7 +144,8 @@ struct mchClustersAOD
 		trackFitter.setChamberResolution(Reso_X, Reso_Y);
 		trackFitter.useChamberResolution();
 
-		mAlign.SetDoEvaluation(kFALSE);
+
+		mAlign.SetDoEvaluation(fDoEvaluation.value);
 		mAlign.SetAllowedVariation(0, 2.0);
 		mAlign.SetAllowedVariation(1, 0.3);
 		mAlign.SetAllowedVariation(2, 0.002);
