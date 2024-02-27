@@ -180,6 +180,11 @@ struct mchClustersAOD {
 
     ic.services().get<CallbackService>().set<CallbackService::Id::Stop>([this]() {
       LOG(info) << "Saving records into ROOT file";
+
+      if (fDoEvaluation.value) {
+        drawHisto(*(mAlign.GetResTree()));
+      }
+
       mAlign.terminate();
       sw.Stop();
       LOG(info) << "CPU time: " << sw.CpuTime();
@@ -302,6 +307,156 @@ struct mchClustersAOD {
     }
 
     return removeTrack;
+  }
+
+  //_________________________________________________________________________________________________
+  void drawHisto(TTree& Res_Tree, string outFileName = "Residual_QA")
+  {
+
+    double deNumber[156];
+
+    // Saving plots
+    string PlotFiles_name = Form("%s%s", outFileName.c_str(), "_results.root");
+    TFile* PlotFiles = TFile::Open(PlotFiles_name.c_str(), "RECREATE");
+
+    int RefClDetElem;
+    int RefClDetElemNumber;
+    float RefClusterX;
+    float RefClusterY;
+    float RefTrackX;
+    float RefTrackY;
+    float RefTrackSlopeX;
+    float RefTrackSlopeY;
+    Res_Tree.SetBranchAddress("fClusterX", &RefClusterX);
+    Res_Tree.SetBranchAddress("fClusterY", &RefClusterY);
+    Res_Tree.SetBranchAddress("fTrackX", &RefTrackX);
+    Res_Tree.SetBranchAddress("fTrackY", &RefTrackY);
+    Res_Tree.SetBranchAddress("fTrackSlopeX", &RefTrackSlopeX);
+    Res_Tree.SetBranchAddress("fTrackSlopeY", &RefTrackSlopeY);
+    Res_Tree.SetBranchAddress("fClDetElem", &RefClDetElem);
+    Res_Tree.SetBranchAddress("fClDetElemNumber", &RefClDetElemNumber);
+
+    TH1F* Histos_Res[2][11];
+    for (int i = 0; i < 2; i++) {
+      for (int j = 0; j < 11; j++) {
+        if (i == 0) {
+          Histos_Res[i][j] = new TH1F(Form("%s%d", "Residual_X_Ch", j), Form("%s%d", "Residual_x_Ch", j), 200, -5, 5);
+        }
+
+        if (i == 1) {
+          Histos_Res[i][j] = new TH1F(Form("%s%d", "Residual_Y_Ch", j), Form("%s%d", "Residual_y_Ch", j), 200, -5, 5);
+        }
+      }
+    }
+
+    TH1F* Histos_DETRes[2][156];
+    for (int i = 0; i < 2; i++) {
+      for (int j = 0; j < 156; j++) {
+        if (i == 0)
+          Histos_DETRes[i][j] = new TH1F(Form("%s%d", "Hist_x_DET", j + 1), Form("%s%d", "Hist_x_DET", j + 1), 200, -5, 5);
+        if (i == 1)
+          Histos_DETRes[i][j] = new TH1F(Form("%s%d", "Hist_y_DET", j + 1), Form("%s%d", "Hist_y_DET", j + 1), 200, -5, 5);
+      }
+    }
+
+    int Ref_NbEntries = Res_Tree.GetEntries();
+    for (int i = 0; i < Ref_NbEntries; i++) {
+
+      Res_Tree.GetEntry(i);
+      double Res_X = RefClusterX - RefTrackX;
+      double Res_Y = RefClusterY - RefTrackY;
+
+      for (int iCh = 0; iCh < 11; iCh++) {
+        if (iCh == 0) {
+          Histos_Res[0][iCh]->Fill(Res_X);
+          Histos_Res[1][iCh]->Fill(Res_Y);
+        } else {
+          if (iCh == int(RefClDetElem / 100)) {
+            Histos_Res[0][iCh]->Fill(Res_X);
+            Histos_Res[1][iCh]->Fill(Res_Y);
+          }
+        }
+      }
+
+      for (int iDEN = 0; iDEN < 156; iDEN++) {
+        if (RefClDetElemNumber == iDEN) {
+          Histos_DETRes[0][iDEN]->Fill(Res_X);
+          Histos_DETRes[1][iDEN]->Fill(Res_Y);
+        }
+      }
+    }
+
+    for (int i = 0; i < 2; i++) {
+      for (int j = 0; j < 11; j++) {
+        if (i == 0)
+          PlotFiles->WriteObjectAny(Histos_Res[i][j], "TH1F", Form("%s%d", "Residual_X_Ch", j));
+        if (i == 1)
+          PlotFiles->WriteObjectAny(Histos_Res[i][j], "TH1F", Form("%s%d", "Residual_Y_Ch", j));
+      }
+    }
+
+    double ResX_mean[156] = {};
+    double ResX_err[156] = {};
+    double ResY_mean[156] = {};
+    double ResY_err[156] = {};
+    for (int iDEN = 0; iDEN < 156; iDEN++) {
+      deNumber[iDEN] = iDEN + 0.5;
+
+      ResX_mean[iDEN] = Histos_DETRes[0][iDEN]->GetMean();
+      ResX_err[iDEN] = Histos_DETRes[0][iDEN]->GetRMS();
+
+      ResY_mean[iDEN] = Histos_DETRes[1][iDEN]->GetMean();
+      ResY_err[iDEN] = Histos_DETRes[1][iDEN]->GetRMS();
+    }
+
+    TGraphErrors* graphResX = new TGraphErrors(156, deNumber, ResX_mean, nullptr, ResX_err);
+    TGraphErrors* graphResY = new TGraphErrors(156, deNumber, ResY_mean, nullptr, ResY_err);
+
+    TCanvas* graphRes = new TCanvas("graphRes", "graphRes", 1200, 1600);
+    TLine limLine(4, -5, 4, 5);
+    TH1F* gHisto = new TH1F("gHisto", "Residuals", 161, 0, 160);
+    gHisto->SetXTitle("Det. Elem. Number");
+
+    graphRes->Divide(1, 2);
+
+    graphRes->cd(1);
+    gHisto->SetYTitle("TrackX - ClusterX (cm)");
+    gHisto->GetYaxis()->SetRangeUser(-5.0, 5.0);
+    gHisto->DrawCopy("goff");
+    graphResX->SetMarkerStyle(8);
+    graphResX->SetMarkerSize(0.7);
+    graphResX->SetLineColor(kBlue);
+    graphResX->Draw("PZsame goff");
+    limLine.DrawLine(4, -5, 4, 5);
+    limLine.DrawLine(8, -5, 8, 5);
+    limLine.DrawLine(12, -5, 12, 5);
+    limLine.DrawLine(16, -5, 16, 5);
+    limLine.DrawLine(16 + 18, -5, 16 + 18, 5);
+    limLine.DrawLine(16 + 2 * 18, -5, 16 + 2 * 18, 5);
+    limLine.DrawLine(16 + 2 * 18 + 26, -5, 16 + 2 * 18 + 26, 5);
+    limLine.DrawLine(16 + 2 * 18 + 2 * 26, -5, 16 + 2 * 18 + 2 * 26, 5);
+    limLine.DrawLine(16 + 2 * 18 + 3 * 26, -5, 16 + 2 * 18 + 3 * 26, 5);
+
+    graphRes->cd(2);
+    gHisto->SetYTitle("TrackY - ClusterY (cm)");
+    gHisto->GetYaxis()->SetRangeUser(-5.0, 5.0);
+    gHisto->DrawCopy("goff");
+    graphResY->SetMarkerStyle(8);
+    graphResY->SetMarkerSize(0.7);
+    graphResY->SetLineColor(kBlue);
+    graphResY->Draw("PZsame goff");
+    limLine.DrawLine(4, -5, 4, 5);
+    limLine.DrawLine(8, -5, 8, 5);
+    limLine.DrawLine(12, -5, 12, 5);
+    limLine.DrawLine(16, -5, 16, 5);
+    limLine.DrawLine(16 + 18, -5, 16 + 18, 5);
+    limLine.DrawLine(16 + 2 * 18, -5, 16 + 2 * 18, 5);
+    limLine.DrawLine(16 + 2 * 18 + 26, -5, 16 + 2 * 18 + 26, 5);
+    limLine.DrawLine(16 + 2 * 18 + 2 * 26, -5, 16 + 2 * 18 + 2 * 26, 5);
+    limLine.DrawLine(16 + 2 * 18 + 3 * 26, -5, 16 + 2 * 18 + 3 * 26, 5);
+
+    PlotFiles->WriteObjectAny(graphRes, "TCanvas", "ResGraph");
+    PlotFiles->Close();
   }
 
   template <typename TTrack, typename TClusters>
