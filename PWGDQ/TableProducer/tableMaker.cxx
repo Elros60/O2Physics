@@ -172,6 +172,8 @@ struct TableMaker {
   Configurable<bool> fConfigDummyRunlist{"cfgDummyRunlist", false, "If true, use dummy runlist"};
   Configurable<int> fConfigInitRunNumber{"cfgInitRunNumber", 543215, "Initial run number used in run by run checks"};
   Configurable<bool> fPropMuon{"cfgPropMuon", false, "Propgate muon tracks through absorber"};
+  Configurable<bool> fConfigFlowBarrelTrack{"cfgFlowBarrelTrack", false, "Use specific track filter for Q-vectors in flow analysis"};
+  Configurable<float> fConfigFlowBarrelTrackPtMax{"cfgBarrelMaxPt", 3.0f, "Max pt cut for tracks in the barrel"};
   Configurable<std::string> geoPath{"geoPath", "GLO/Config/GeometryAligned", "Path of the geometry file"};
   Configurable<std::string> grpmagPath{"grpmagPath", "GLO/Config/GRPMagField", "CCDB path of the GRPMagField object"};
   Configurable<std::string> grpmagPathRun2{"grpmagPathRun2", "GLO/GRP/GRP", "CCDB path of the GRPObject (Usage for Run 2)"};
@@ -194,8 +196,7 @@ struct TableMaker {
   int fCurrentRun;            // needed to detect if the run changed and trigger update of calibrations etc.
 
   // TODO: filter on TPC dedx used temporarily until electron PID will be improved
-  Filter barrelSelectedTracks = ifnode(fIsRun2.node() == true, aod::track::trackType == uint8_t(aod::track::Run2Track), aod::track::trackType == uint8_t(aod::track::Track)) && o2::aod::track::pt >= fConfigBarrelTrackPtLow && nabs(o2::aod::track::eta) <= fConfigBarrelTrackMaxAbsEta && o2::aod::track::tpcSignal >= fConfigMinTpcSignal && o2::aod::track::tpcSignal <= fConfigMaxTpcSignal && o2::aod::track::tpcChi2NCl < 4.0f && o2::aod::track::itsChi2NCl < 36.0f;
-
+  Filter barrelSelectedTracks = fConfigFlowBarrelTrack ? (nabs(aod::track::eta) <= fConfigBarrelTrackMaxAbsEta) && (aod::track::pt > fConfigBarrelTrackPtLow) && (aod::track::pt < fConfigFlowBarrelTrackPtMax) && ((requireGlobalTrackInFilter()) || (aod::track::isGlobalTrackSDD == (uint8_t) true)) && o2::aod::track::tpcChi2NCl < 4.0f && o2::aod::track::itsChi2NCl < 36.0f : ifnode(fIsRun2.node() == true, aod::track::trackType == uint8_t(aod::track::Run2Track), aod::track::trackType == uint8_t(aod::track::Track)) && o2::aod::track::pt >= fConfigBarrelTrackPtLow && nabs(o2::aod::track::eta) <= fConfigBarrelTrackMaxAbsEta && o2::aod::track::tpcSignal >= fConfigMinTpcSignal && o2::aod::track::tpcSignal <= fConfigMaxTpcSignal && o2::aod::track::tpcChi2NCl < 4.0f && o2::aod::track::itsChi2NCl < 36.0f;
   Filter muonFilter = o2::aod::fwdtrack::pt >= fConfigMuonPtLow;
 
   void init(o2::framework::InitContext& context)
@@ -474,6 +475,39 @@ struct TableMaker {
           if (fIsAmbiguous && isAmbiguous == 1) {
             fHistMan->FillHistClass("Ambiguous_TrackBarrel_BeforeCuts", VarManager::fgValues);
           }
+        }
+
+        if (fConfigFlowBarrelTrack) {
+          // create the track tables
+          trackBasic(event.lastIndex(), trackFilteringTag, track.pt(), track.eta(), track.phi(), track.sign(), isAmbiguous);
+          trackBarrel(track.x(), track.alpha(), track.y(), track.z(), track.snp(), track.tgl(), track.signed1Pt(),
+                      track.tpcInnerParam(), track.flags(), track.itsClusterMap(), track.itsChi2NCl(),
+                      track.tpcNClsFindable(), track.tpcNClsFindableMinusFound(), track.tpcNClsFindableMinusCrossedRows(),
+                      track.tpcNClsShared(), track.tpcChi2NCl(),
+                      track.trdChi2(), track.trdPattern(), track.tofChi2(),
+                      track.length(), track.dcaXY(), track.dcaZ(),
+                      track.trackTime(), track.trackTimeRes(), track.tofExpMom(),
+                      track.detectorMap());
+          trackBarrelInfo(track.collisionId(), collision.posX(), collision.posY(), collision.posZ());
+          if constexpr (static_cast<bool>(TTrackFillMap & VarManager::ObjTypes::TrackCov)) {
+            trackBarrelCov(track.cYY(), track.cZY(), track.cZZ(), track.cSnpY(), track.cSnpZ(),
+                           track.cSnpSnp(), track.cTglY(), track.cTglZ(), track.cTglSnp(), track.cTglTgl(),
+                           track.c1PtY(), track.c1PtZ(), track.c1PtSnp(), track.c1PtTgl(), track.c1Pt21Pt2());
+          }
+          // NOTE: If the TPC postcalibration is switched on, then we write the postcalibrated n-sigma values directly in the skimmed data
+          if constexpr (static_cast<bool>(TTrackFillMap & VarManager::ObjTypes::TrackPID)) {
+            float nSigmaEl = (fConfigComputeTPCpostCalib ? VarManager::fgValues[VarManager::kTPCnSigmaEl_Corr] : track.tpcNSigmaEl());
+            float nSigmaPi = (fConfigComputeTPCpostCalib ? VarManager::fgValues[VarManager::kTPCnSigmaPi_Corr] : track.tpcNSigmaPi());
+            float nSigmaKa = ((fConfigComputeTPCpostCalib && fConfigComputeTPCpostCalibKaon) ? VarManager::fgValues[VarManager::kTPCnSigmaKa_Corr] : track.tpcNSigmaKa());
+            float nSigmaPr = (fConfigComputeTPCpostCalib ? VarManager::fgValues[VarManager::kTPCnSigmaPr_Corr] : track.tpcNSigmaPr());
+            trackBarrelPID(track.tpcSignal(),
+                           nSigmaEl, track.tpcNSigmaMu(), nSigmaPi, nSigmaKa, nSigmaPr,
+                           track.beta(),
+                           track.tofNSigmaEl(), track.tofNSigmaMu(), track.tofNSigmaPi(), track.tofNSigmaKa(), track.tofNSigmaPr(),
+                           track.trdSignal());
+          }
+
+          continue;
         }
 
         // apply track cuts and fill stats histogram
@@ -1235,6 +1269,13 @@ struct TableMaker {
     fullSkimming<gkEventFillMapWithCent, gkTrackFillMap, gkMuonFillMap>(collision, bcs, tracksBarrel, tracksMuon, nullptr, nullptr);
   }
 
+  // Produce barrel + muon tables with covariance, with centrality --------------------------------------------------------------------------------------------
+  void processFullWithCentAndMuonCov(MyEventsWithCent::iterator const& collision, aod::BCsWithTimestamps const& bcs,
+                                     soa::Filtered<MyBarrelTracks> const& tracksBarrel, soa::Filtered<MyMuonsWithCov> const& tracksMuon)
+  {
+    fullSkimming<gkEventFillMapWithCent, gkTrackFillMap, gkMuonFillMapWithCov>(collision, bcs, tracksBarrel, tracksMuon, nullptr, nullptr);
+  }
+
   // Produce barrel + muon tables, with centrality and multiplicity ---------------------------------------------------------------------------
   void processFullWithCentAndMults(MyEventsWithCentAndMults::iterator const& collision, aod::BCsWithTimestamps const& bcs,
                                    soa::Filtered<MyBarrelTracks> const& tracksBarrel, soa::Filtered<MyMuons> const& tracksMuon)
@@ -1613,6 +1654,7 @@ struct TableMaker {
   PROCESS_SWITCH(TableMaker, processFullWithCovAndEventFilter, "Build full DQ skimmed data model, w/ track and fwdtrack covariance tables, w/ event filter", false);
   PROCESS_SWITCH(TableMaker, processFullWithCovMultsAndEventFilter, "Build full DQ skimmed data model, w/ track and fwdtrack covariance tables, w/ event filter and multiplicities", false);
   PROCESS_SWITCH(TableMaker, processFullWithCent, "Build full DQ skimmed data model, w/ centrality", false);
+  PROCESS_SWITCH(TableMaker, processFullWithCentAndMuonCov, "Build full DQ skimmed data model, w/ centrality and muon covariances", false);
   PROCESS_SWITCH(TableMaker, processFullWithCentAndMults, "Build full DQ skimmed data model, w/ centrality and multiplicities", false);
   PROCESS_SWITCH(TableMaker, processFullWithCovCentAndMults, "Build full DQ skimmed data model, w/ centrality, multiplicities and track covariances", false);
   PROCESS_SWITCH(TableMaker, processBarrelOnlyWithV0Bits, "Build full DQ skimmed data model, w/o centrality, w/ V0Bits", false);

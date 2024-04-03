@@ -19,6 +19,7 @@
 #include <THashList.h>
 #include <TList.h>
 #include <TString.h>
+#include <TRandom3.h>
 #include "CCDB/BasicCCDBManager.h"
 #include "DataFormatsParameters/GRPObject.h"
 #include "Framework/runDataProcessing.h"
@@ -34,12 +35,18 @@
 #include "PWGDQ/Core/HistogramsLibrary.h"
 #include "PWGDQ/Core/CutsLibrary.h"
 #include "PWGDQ/Core/MixingLibrary.h"
+#include "PWGCF/GenericFramework/Core/GFW.h"
+#include "PWGCF/GenericFramework/Core/GFWCumulant.h"
+#include "PWGCF/GenericFramework/Core/FlowContainer.h"
+#include "PWGCF/GenericFramework/Core/GFWWeights.h"
+#include "PWGCF/GenericFramework/Core/GFWConfig.h"
 #include "DataFormatsParameters/GRPMagField.h"
 #include "Field/MagneticField.h"
 #include "TGeoGlobalMagField.h"
 #include "DetectorsBase/Propagator.h"
 #include "DetectorsBase/GeometryManager.h"
 
+using std::complex;
 using std::cout;
 using std::endl;
 using std::string;
@@ -780,6 +787,12 @@ struct AnalysisSameEventPairing {
   Configurable<std::string> geoPath{"geoPath", "GLO/Config/GeometryAligned", "Path of the geometry file"};
   Configurable<std::string> fCollisionSystem{"syst", "pp", "Collision system, pp or PbPb"};
   Configurable<float> fCenterMassEnergy{"energy", 13600, "Center of mass energy in GeV"};
+  Configurable<bool> fConfigFlowFillWeights{"cfgFlowFillWeights", false, "Enable saving of GFWWeights for NUA correction"};
+  Configurable<string> fConfigFlowAcceptance{"cfgFlowAcceptance", "", "ccdb path of NUA correction weights for flow analysis"};
+  Configurable<string> fConfigFlowEfficiency{"cfgFlowEfficiency", "", "ccdb path of efficiency weights for flow analysis"};
+  ConfigurableAxis fConfigFlowAxisCentrality{"cfgFlowAxisCentrality", {VARIABLE_WIDTH, 0, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100.1}, "multiplicity / centrality axis for histograms"};
+  Configurable<float> fConfigFlowBarrelTrackEtaGapLimAbs{"cfgFlowBarrelTrackEtaGapLimAbs", 0.4f, "Eta gap limit value cut for tracks in the barrel for flow analysis"};
+  Configurable<float> fConfigFlowBarrelTrackMaxAbsEta{"cfgFlowBarrelMaxAbsEta", 0.8f, "Eta absolute value cut for tracks in the barrel for flow analysis"};
 
   Service<o2::ccdb::BasicCCDBManager> ccdb;
   Filter filterEventSelected = aod::dqanalysisflags::isEventSelected == 1;
@@ -789,6 +802,19 @@ struct AnalysisSameEventPairing {
   Filter prefilter = aod::dqanalysisflags::isPrefilterVetoed == 0;
 
   HistogramManager* fHistMan;
+
+  // Define variables of Generic Framework for flow analysis
+  GFW* fGFW = new GFW();
+  std::vector<GFW::CorrConfig> fCorrConfigs;
+  TRandom3* fRndm = new TRandom3(0);
+  TAxis* fPtAxis;
+
+  // Struct for Q-vector weights configuration
+  struct Config {
+    TH1D* mEfficiency = nullptr;
+    GFWWeights* mAcceptance = nullptr;
+    bool correctionsLoaded = false;
+  } fCfg;
 
   // NOTE: The track filter produced by the barrel track selection contain a number of electron cut decisions and one last cut for hadrons used in the
   //           dilepton - hadron task downstream. So the bit mask is required to select pairs just based on the electron cuts
@@ -800,6 +826,9 @@ struct AnalysisSameEventPairing {
   std::vector<std::vector<TString>> fTrackMuonHistNames;
   std::vector<AnalysisCompositeCut> fPairCuts;
 
+  OutputObj<FlowContainer> fFC{FlowContainer("FlowContainer")};
+  OutputObj<GFWWeights> fWeights{GFWWeights("weights")};
+
   void init(o2::framework::InitContext& context)
   {
     fCurrentRun = 0;
@@ -807,6 +836,45 @@ struct AnalysisSameEventPairing {
     ccdb->setURL(ccdburl.value);
     ccdb->setCaching(true);
     ccdb->setLocalObjectValidityChecking();
+
+    // Setup for GFWWeights
+    if (fConfigFlowFillWeights) {
+      fWeights->Init(true, false); // true for data, false for MC
+    }
+
+    // Configuration of Generic Framework for flow analysis
+    TObjArray* oba = new TObjArray();
+    oba->Add(new TNamed("refP {2} refN {-2}", "RefGap22"));
+    oba->Add(new TNamed("refP {3} refN {-3}", "RefGap32"));
+    oba->Add(new TNamed("refFull {2 -2}", "RefFull22"));
+    oba->Add(new TNamed("refFull {3 -3}", "RefFull32"));
+    oba->Add(new TNamed("refFull {2 2 -2 -2}", "RefFull24"));
+    oba->Add(new TNamed("refFull {3 3 -3 -3}", "RefFull34"));
+    oba->Add(new TNamed("poiFull refFull {2 -2}}", "PoiFull22"));
+    oba->Add(new TNamed("poiFull refFull {3 -3}}", "PoiFull32"));
+    oba->Add(new TNamed("poiFull refFull {2 2 -2 -2}}", "PoiFull24"));
+    oba->Add(new TNamed("poiFull refFull {3 3 -3 -3}}", "PoiFull34"));
+    fFC->SetName("FlowContainer");
+    fFC->Initialize(oba, fConfigFlowAxisCentrality, 10);
+    delete oba;
+    // Define for regions
+    fGFW->AddRegion("refN", -fConfigFlowBarrelTrackMaxAbsEta, -fConfigFlowBarrelTrackEtaGapLimAbs, 1, 1);
+    fGFW->AddRegion("refP", fConfigFlowBarrelTrackMaxAbsEta, fConfigFlowBarrelTrackEtaGapLimAbs, 1, 1);
+    fGFW->AddRegion("refFull", -fConfigFlowBarrelTrackMaxAbsEta, fConfigFlowBarrelTrackMaxAbsEta, 1, 1);
+    fGFW->AddRegion("poiFull", -4.0, -2.5, 1, 2);
+    // Definition for correlations
+    fCorrConfigs.push_back(fGFW->GetCorrelatorConfig("refP {2} refN {-2}", "RefGap22"));
+    fCorrConfigs.push_back(fGFW->GetCorrelatorConfig("refP {3} refN {-3}", "RefGap32"));
+    fCorrConfigs.push_back(fGFW->GetCorrelatorConfig("refFull {2 -2}}", "RefFull22"));
+    fCorrConfigs.push_back(fGFW->GetCorrelatorConfig("refFull {3 -3}}", "RefFull32"));
+    fCorrConfigs.push_back(fGFW->GetCorrelatorConfig("refFull {2 2 -2 -2}}", "RefFull24"));
+    fCorrConfigs.push_back(fGFW->GetCorrelatorConfig("refFull {3 3 -3 -3}}", "RefFull34"));
+    fCorrConfigs.push_back(fGFW->GetCorrelatorConfig("poiFull refFull {2 -2}}", "PoiFull22"));
+    fCorrConfigs.push_back(fGFW->GetCorrelatorConfig("poiFull refFull {3 -3}}", "PoiFull32"));
+    fCorrConfigs.push_back(fGFW->GetCorrelatorConfig("poiFull refFull {2 2 -2 -2}}", "PoiFull24"));
+    fCorrConfigs.push_back(fGFW->GetCorrelatorConfig("poiFull refFull {3 3 -3 -3}}", "PoiFull34"));
+
+    fGFW->CreateRegions();
 
     if (fNoCorr) {
       VarManager::SetupFwdDCAFitterNoCorr();
@@ -941,6 +1009,359 @@ struct AnalysisSameEventPairing {
     DefineHistograms(fHistMan, histNames.Data(), fConfigAddSEPHistogram); // define all histograms
     VarManager::SetUseVars(fHistMan->GetUsedVars());                      // provide the list of required variables so that VarManager knows what to fill
     fOutputList.setObject(fHistMan->GetMainHistogramList());
+  }
+
+  void loadNUACorrectionsForQvectors(uint64_t timestamp)
+  {
+    if (fCfg.correctionsLoaded) {
+      return;
+    }
+    if (fConfigFlowAcceptance.value.empty() == false) {
+      fCfg.mAcceptance = ccdb->getForTimeStamp<GFWWeights>(fConfigFlowAcceptance, timestamp);
+      if (fCfg.mAcceptance) {
+        LOGF(info, "Loaded acceptance weights from %s (%p)", fConfigFlowAcceptance.value.c_str(), (void*)fCfg.mAcceptance);
+      } else {
+        LOGF(warning, "Could not load acceptance weights from %s (%p)", fConfigFlowAcceptance.value.c_str(), (void*)fCfg.mAcceptance);
+      }
+    }
+    if (fConfigFlowEfficiency.value.empty() == false) {
+      fCfg.mEfficiency = ccdb->getForTimeStamp<TH1D>(fConfigFlowEfficiency, timestamp);
+      if (fCfg.mEfficiency == nullptr) {
+        LOGF(fatal, "Could not load efficiency histogram for trigger particles from %s", fConfigFlowEfficiency.value.c_str());
+      }
+      LOGF(info, "Loaded efficiency histogram from %s (%p)", fConfigFlowEfficiency.value.c_str(), (void*)fCfg.mEfficiency);
+    }
+    fCfg.correctionsLoaded = true;
+  }
+
+  // Fill the FlowContainer: only for pT-integrated case at the moment
+  void FillFC(const GFW::CorrConfig& corrconf, const double& cent, const double& rndm, bool fillflag)
+  {
+    // Calculate the correlations from the GFW
+    double dnx, dny, valx;
+    dnx = fGFW->Calculate(corrconf, 0, true).real();
+    dny = fGFW->Calculate(corrconf, 0, true).imag();
+    if (dnx == 0) {
+      return;
+    }
+
+    if (!corrconf.pTDif) {
+      valx = fGFW->Calculate(corrconf, 0, false).real() / dnx;
+      if (TMath::Abs(valx) < 1) {
+        fFC->FillProfile(corrconf.Head.c_str(), cent, valx, 1, rndm);
+        if (dny == 0) {
+          return;
+        }
+      }
+      return;
+    }
+    uint8_t nAxisPtBins = 31;
+    for (int i = 1; i <= nAxisPtBins; i++) {
+      dnx = fGFW->Calculate(corrconf, 0, true).real();
+      if (dnx == 0) {
+        return;
+      }
+      valx = fGFW->Calculate(corrconf, 0, false).real() / dnx;
+      if (TMath::Abs(valx) < 1) {
+        // Fill the charged particle correlation vs pT profiles
+        fFC->FillProfile(Form("%s_pt_%i", corrconf.Head.c_str(), i), cent, valx, 1., rndm);
+      }
+      return;
+    }
+  }
+
+  // Template function to run same event pairing (barrel-barrel, muon-muon, barrel-muon)
+  template <bool TTwoProngFitter, int TPairType, uint32_t TEventFillMap, uint32_t TTrackFillMap, typename TEvent, typename TTracks1, typename TTracks2>
+  void runSameEventPairingWithGFW(TEvent const& event, TTracks1 const& tracksRef, TTracks2 const& tracksPoi)
+  {
+    if (fCurrentRun != event.runNumber()) {
+      loadNUACorrectionsForQvectors(event.timestamp());
+      if (fUseRemoteField.value) {
+        grpmag = ccdb->getForTimeStamp<o2::parameters::GRPMagField>(grpmagPath, event.timestamp());
+        if (grpmag != nullptr) {
+          mMagField = grpmag->getNominalL3Field();
+        } else {
+          LOGF(fatal, "GRP object is not available in CCDB at timestamp=%llu", event.timestamp());
+        }
+        if constexpr (TTwoProngFitter == true) {
+          if (fConfigUseKFVertexing.value) {
+            VarManager::SetupTwoProngKFParticle(mMagField);
+          } else {
+            VarManager::SetupTwoProngDCAFitter(mMagField, true, 200.0f, 4.0f, 1.0e-3f, 0.9f, fUseAbsDCA.value); // TODO: get these parameters from Configurables
+            VarManager::SetupTwoProngFwdDCAFitter(mMagField, true, 200.0f, 1.0e-3f, 0.9f, fUseAbsDCA.value);
+          }
+        } else {
+          VarManager::SetupTwoProngDCAFitter(mMagField, true, 200.0f, 4.0f, 1.0e-3f, 0.9f, fUseAbsDCA.value); // needed because take in varmanager Bz from fgFitterTwoProngBarrel for PhiV calculations
+        }
+      } else {
+        if constexpr (TTwoProngFitter == true) {
+          if (fConfigUseKFVertexing.value) {
+            VarManager::SetupTwoProngKFParticle(fConfigMagField.value);
+          } else {
+            VarManager::SetupTwoProngDCAFitter(fConfigMagField.value, true, 200.0f, 4.0f, 1.0e-3f, 0.9f, fUseAbsDCA.value); // TODO: get these parameters from Configurables
+            VarManager::SetupTwoProngFwdDCAFitter(fConfigMagField.value, true, 200.0f, 1.0e-3f, 0.9f, fUseAbsDCA.value);
+          }
+        } else {
+          VarManager::SetupTwoProngDCAFitter(fConfigMagField.value, true, 200.0f, 4.0f, 1.0e-3f, 0.9f, fUseAbsDCA.value); // needed because take in varmanager Bz from fgFitterTwoProngBarrel for PhiV calculations
+        }
+      }
+      fCurrentRun = event.runNumber();
+    }
+
+    TString cutNames = fConfigTrackCuts.value;
+    std::vector<std::vector<TString>> histNames = fTrackHistNames;
+    if constexpr (TPairType == pairTypeMuMu) {
+      cutNames = fConfigMuonCuts.value;
+      histNames = fMuonHistNames;
+    }
+    if constexpr (TPairType == pairTypeEMu) {
+      cutNames = fConfigMuonCuts.value;
+      histNames = fTrackMuonHistNames;
+    }
+    std::unique_ptr<TObjArray> objArray(cutNames.Tokenize(","));
+    int ncuts = objArray->GetEntries();
+
+    uint32_t twoTrackFilter = 0;
+    uint32_t dileptonFilterMap = 0;
+    uint32_t dileptonMcDecision = 0; // placeholder, copy of the dqEfficiency.cxx one
+    dielectronList.reserve(1);
+    dimuonList.reserve(1);
+    dielectronExtraList.reserve(1);
+    dimuonExtraList.reserve(1);
+    dileptonInfoList.reserve(1);
+    if (fConfigFlatTables.value) {
+      dimuonAllList.reserve(1);
+    }
+
+    if (fConfigMultDimuons.value) {
+
+      uint32_t mult_dimuons = 0;
+
+      for (auto& [t1, t2] : combinations(tracksPoi, tracksPoi)) {
+        if constexpr (TPairType == VarManager::kDecayToMuMu) {
+          twoTrackFilter = uint32_t(t1.isMuonSelected()) & uint32_t(t2.isMuonSelected()) & fTwoMuonFilterMask;
+        }
+
+        if (twoTrackFilter && (t1.sign() != t2.sign())) {
+          mult_dimuons++;
+        }
+      }
+
+      VarManager::fgValues[VarManager::kMultDimuons] = mult_dimuons;
+    }
+
+    // Loop over Ref tracks
+    float weff = 1.0, wacc = 1.0;
+    for (auto& track : tracksRef) {
+
+      // Fill weights for Q-vector correction: this should be enabled for a first run to get weights
+      if (fConfigFlowFillWeights) {
+        fWeights->Fill(track.phi(), track.eta(), event.posZ(), track.pt(), VarManager::fgValues[VarManager::kCentFT0C], 0);
+      }
+
+      if (fCfg.mEfficiency) {
+        weff = fCfg.mEfficiency->GetBinContent(fCfg.mEfficiency->FindBin(track.pt()));
+      } else {
+        weff = 1.0;
+      }
+      if (weff == 0) {
+        continue;
+      }
+      weff = 1. / weff;
+      if (fCfg.mAcceptance) {
+        wacc = fCfg.mAcceptance->GetNUA(track.phi(), track.eta(), event.posZ());
+      } else {
+        wacc = 1.0;
+      }
+
+      // Fill the GFW for each track to compute Q vector and correction using weights
+      fGFW->Fill(track.eta(), 0, track.phi(), wacc * weff, 1);
+    }
+
+    for (auto& [t1, t2] : combinations(tracksPoi, tracksPoi)) {
+      if constexpr (TPairType == VarManager::kDecayToEE || TPairType == VarManager::kDecayToPiPi) {
+        twoTrackFilter = uint32_t(t1.isBarrelSelected()) & uint32_t(t2.isBarrelSelected()) & fTwoTrackFilterMask;
+      }
+      if constexpr (TPairType == VarManager::kDecayToMuMu) {
+        twoTrackFilter = uint32_t(t1.isMuonSelected()) & uint32_t(t2.isMuonSelected()) & fTwoMuonFilterMask;
+      }
+      if (!twoTrackFilter) { // the tracks must have at least one filter bit in common to continue
+        continue;
+      }
+
+      constexpr bool eventHasQvector = ((TEventFillMap & VarManager::ObjTypes::ReducedEventQvector) > 0);
+
+      VarManager::FillPair<TPairType, TTrackFillMap>(t1, t2);
+      if constexpr ((TPairType == pairTypeEE) || (TPairType == pairTypeMuMu)) { // call this just for ee or mumu pairs
+        if constexpr (TTwoProngFitter == true) {
+          VarManager::FillPairVertexing<TPairType, TEventFillMap, TTrackFillMap>(event, t1, t2, fPropToPCA);
+          // Fill the GFW for each track to compute Q vector and correction using weights
+          fGFW->Fill(VarManager::fgValues[VarManager::kEta], 0, VarManager::fgValues[VarManager::kPhi], 1, 2); // no weights for POIs
+        }
+
+        if constexpr (eventHasQvector) {
+          VarManager::FillPairVn<TPairType>(t1, t2);
+        }
+      }
+
+      // TODO: provide the type of pair to the dilepton table (e.g. ee, mumu, emu...)
+      dileptonFilterMap = twoTrackFilter;
+
+      if constexpr (TPairType == pairTypeEE) {
+        dielectronList(event, VarManager::fgValues[VarManager::kMass], VarManager::fgValues[VarManager::kPt], VarManager::fgValues[VarManager::kEta], VarManager::fgValues[VarManager::kPhi], t1.sign() + t2.sign(), dileptonFilterMap, dileptonMcDecision);
+      }
+      if constexpr (TPairType == pairTypeMuMu) {
+        dimuonList(event, VarManager::fgValues[VarManager::kMass], VarManager::fgValues[VarManager::kPt], VarManager::fgValues[VarManager::kEta], VarManager::fgValues[VarManager::kPhi], t1.sign() + t2.sign(), dileptonFilterMap, dileptonMcDecision);
+      }
+      if constexpr ((TPairType == pairTypeMuMu && ((TTrackFillMap & VarManager::ObjTypes::ReducedMuonCollInfo) > 0)) || (TPairType == pairTypeEE && ((TTrackFillMap & VarManager::ObjTypes::ReducedTrackCollInfo) > 0))) {
+        dileptonInfoList(t1.collisionId(), event.posX(), event.posY(), event.posZ());
+      }
+
+      constexpr bool trackHasCov = ((TTrackFillMap & VarManager::ObjTypes::TrackCov) > 0 || (TTrackFillMap & VarManager::ObjTypes::ReducedTrackBarrelCov) > 0);
+      if constexpr ((TPairType == pairTypeEE) && trackHasCov && (TTwoProngFitter == true)) {
+        dielectronExtraList(t1.globalIndex(), t2.globalIndex(), VarManager::fgValues[VarManager::kVertexingTauz], VarManager::fgValues[VarManager::kVertexingLz], VarManager::fgValues[VarManager::kVertexingLxy]);
+      }
+      if constexpr ((TPairType == pairTypeMuMu) && (TTwoProngFitter == true)) {
+        // LOGP(info, "mu1 collId = {}, mu2 collId = {}", t1.collisionId(), t2.collisionId());
+        dimuonExtraList(t1.globalIndex(), t2.globalIndex(), VarManager::fgValues[VarManager::kVertexingTauz], VarManager::fgValues[VarManager::kVertexingLz], VarManager::fgValues[VarManager::kVertexingLxy]);
+        if (fConfigFlatTables.value) {
+          dimuonAllList(event.posX(), event.posY(), event.posZ(), event.numContrib(),
+                        -999., -999., -999.,
+                        VarManager::fgValues[VarManager::kMass],
+                        false,
+                        VarManager::fgValues[VarManager::kPt], VarManager::fgValues[VarManager::kEta], VarManager::fgValues[VarManager::kPhi], t1.sign() + t2.sign(), VarManager::fgValues[VarManager::kVertexingChi2PCA],
+                        VarManager::fgValues[VarManager::kVertexingTauz], VarManager::fgValues[VarManager::kVertexingTauzErr],
+                        VarManager::fgValues[VarManager::kVertexingTauxy], VarManager::fgValues[VarManager::kVertexingTauxyErr],
+                        VarManager::fgValues[VarManager::kCosPointingAngle],
+                        VarManager::fgValues[VarManager::kPt1], VarManager::fgValues[VarManager::kEta1], VarManager::fgValues[VarManager::kPhi1], t1.sign(),
+                        VarManager::fgValues[VarManager::kPt2], VarManager::fgValues[VarManager::kEta2], VarManager::fgValues[VarManager::kPhi2], t2.sign(),
+                        t1.fwdDcaX(), t1.fwdDcaY(), t2.fwdDcaX(), t2.fwdDcaY(),
+                        0., 0.,
+                        t1.chi2MatchMCHMID(), t2.chi2MatchMCHMID(),
+                        t1.chi2MatchMCHMFT(), t2.chi2MatchMCHMFT(),
+                        t1.chi2(), t2.chi2(),
+                        -999., -999., -999., -999.,
+                        -999., -999., -999., -999.,
+                        -999., -999., -999., -999.,
+                        -999., -999., -999., -999.,
+                        t1.isAmbiguous(), t2.isAmbiguous(),
+                        VarManager::fgValues[VarManager::kU2Q2], VarManager::fgValues[VarManager::kU3Q3],
+                        VarManager::fgValues[VarManager::kR2EP], VarManager::fgValues[VarManager::kR2SP], VarManager::fgValues[VarManager::kCentFT0C],
+                        VarManager::fgValues[VarManager::kCos2DeltaPhi], VarManager::fgValues[VarManager::kCos3DeltaPhi], VarManager::fgValues[VarManager::kCORR2REF], VarManager::fgValues[VarManager::kCORR2POI],
+                        VarManager::fgValues[VarManager::kCORR4REF], VarManager::fgValues[VarManager::kCORR4POI], VarManager::fgValues[VarManager::kC4REF], VarManager::fgValues[VarManager::kC4POI], VarManager::fgValues[VarManager::kV4], VarManager::fgValues[VarManager::kVertexingPz],
+                        VarManager::fgValues[VarManager::kVertexingSV]);
+        }
+      }
+
+      if constexpr (eventHasQvector) {
+        dileptonFlowList(VarManager::fgValues[VarManager::kU2Q2], VarManager::fgValues[VarManager::kU3Q3], VarManager::fgValues[VarManager::kCos2DeltaPhi], VarManager::fgValues[VarManager::kCos3DeltaPhi]);
+      }
+
+      int iCut = 0;
+      for (int icut = 0; icut < ncuts; icut++) {
+        if (twoTrackFilter & (uint32_t(1) << icut)) {
+          if (t1.sign() * t2.sign() < 0) {
+            fHistMan->FillHistClass(histNames[iCut][0].Data(), VarManager::fgValues);
+            if (!(t1.isAmbiguous() || t2.isAmbiguous())) {
+              fHistMan->FillHistClass(Form("%s_unambiguous", histNames[iCut][0].Data()), VarManager::fgValues);
+            }
+          } else {
+            if (t1.sign() > 0) {
+              fHistMan->FillHistClass(histNames[iCut][1].Data(), VarManager::fgValues);
+              if (!(t1.isAmbiguous() || t2.isAmbiguous())) {
+                fHistMan->FillHistClass(Form("%s_unambiguous", histNames[iCut][1].Data()), VarManager::fgValues);
+              }
+            } else {
+              fHistMan->FillHistClass(histNames[iCut][2].Data(), VarManager::fgValues);
+              if (!(t1.isAmbiguous() || t2.isAmbiguous())) {
+                fHistMan->FillHistClass(Form("%s_unambiguous", histNames[iCut][2].Data()), VarManager::fgValues);
+              }
+            }
+          }
+          iCut++;
+          for (unsigned int iPairCut = 0; iPairCut < fPairCuts.size(); iPairCut++, iCut++) {
+            AnalysisCompositeCut cut = fPairCuts.at(iPairCut);
+            if (!(cut.IsSelected(VarManager::fgValues))) // apply pair cuts
+              continue;
+            if (t1.sign() * t2.sign() < 0) {
+              fHistMan->FillHistClass(histNames[iCut][0].Data(), VarManager::fgValues);
+              if (!(t1.isAmbiguous() || t2.isAmbiguous())) {
+                fHistMan->FillHistClass(Form("%s_unambiguous", histNames[iCut][0].Data()), VarManager::fgValues);
+              }
+            } else {
+              if (t1.sign() > 0) {
+                fHistMan->FillHistClass(histNames[iCut][1].Data(), VarManager::fgValues);
+                if (!(t1.isAmbiguous() || t2.isAmbiguous())) {
+                  fHistMan->FillHistClass(Form("%s_unambiguous", histNames[iCut][1].Data()), VarManager::fgValues);
+                }
+              } else {
+                fHistMan->FillHistClass(histNames[iCut][2].Data(), VarManager::fgValues);
+                if (!(t1.isAmbiguous() || t2.isAmbiguous())) {
+                  fHistMan->FillHistClass(Form("%s_unambiguous", histNames[iCut][2].Data()), VarManager::fgValues);
+                }
+              }
+            }
+          }      // end loop (pair cuts)
+        } else { // end if (filter bits)
+          iCut = iCut + 1 + fPairCuts.size();
+        }
+      } // end loop (cuts)
+    }
+
+    float l_Random = fRndm->Rndm(); // used only to compute correlators
+    bool fillFlag = kFALSE;         // could be used later
+    for (uint64_t l_ind = 0; l_ind < fCorrConfigs.size(); l_ind++) {
+      FillFC(fCorrConfigs.at(l_ind), VarManager::fgValues[VarManager::kCentFT0C], l_Random, fillFlag);
+    }
+
+    // Define quantities needed for the different eta regions
+    uint8_t nentriesN = 0.0;
+    uint8_t nentriesP = 0.0;
+    uint8_t nentriesFull = 0.0;
+    complex<double> Q1vecN;
+    complex<double> Q1vecP;
+    complex<double> Q1vecFull;
+    complex<double> Q2vecN;
+    complex<double> Q2vecP;
+    complex<double> Q2vecFull;
+    complex<double> Q3vecN;
+    complex<double> Q3vecP;
+    complex<double> Q3vecFull;
+    complex<double> Q4vecN;
+    complex<double> Q4vecP;
+    complex<double> Q4vecFull;
+
+    if (fGFW && (tracksRef.size() > 0)) {
+      // Obtain the GFWCumulant where Q is calculated (index=region, with different eta gaps)
+      GFWCumulant gfwCumN = fGFW->GetCumulant(0);
+      GFWCumulant gfwCumP = fGFW->GetCumulant(1);
+      GFWCumulant gfwCumFull = fGFW->GetCumulant(2);
+
+      // and the multiplicity of the event in each region
+      nentriesN = gfwCumN.GetN();
+      nentriesP = gfwCumP.GetN();
+      nentriesFull = gfwCumFull.GetN();
+
+      // Get the Q vector for selected harmonic, power (for minPt=0)
+      Q1vecN = gfwCumN.Vec(1, 1);
+      Q1vecP = gfwCumP.Vec(1, 1);
+      Q1vecFull = gfwCumFull.Vec(1, 1);
+      Q2vecN = gfwCumN.Vec(2, 1);
+      Q2vecP = gfwCumP.Vec(2, 1);
+      Q2vecFull = gfwCumFull.Vec(2, 1);
+      Q3vecN = gfwCumN.Vec(3, 1);
+      Q3vecP = gfwCumP.Vec(3, 1);
+      Q3vecFull = gfwCumFull.Vec(3, 1);
+      Q4vecN = gfwCumN.Vec(4, 1);
+      Q4vecP = gfwCumP.Vec(4, 1);
+      Q4vecFull = gfwCumFull.Vec(4, 1);
+    }
+
+    // Fill the VarManager::fgValues with the Q vector quantities
+    VarManager::FillQVectorFromGFW(event, Q1vecFull, Q1vecN, Q1vecP, Q2vecFull, Q2vecN, Q2vecP, Q3vecFull, Q3vecN, Q3vecP, Q4vecFull, Q4vecN, Q4vecP, nentriesFull, nentriesN, nentriesP);
+    if ((tracksPoi.size() > 0) && (nentriesFull * nentriesN * nentriesP != 0.0)) {
+      fHistMan->FillHistClass("QA_Flow", VarManager::fgValues);
+    }
   }
 
   // Template function to run same event pairing (barrel-barrel, muon-muon, barrel-muon)
@@ -1258,6 +1679,13 @@ struct AnalysisSameEventPairing {
     VarManager::FillEvent<gkEventFillMapWithCovQvectorCentr>(event, VarManager::fgValues);
     runSameEventPairing<true, VarManager::kDecayToMuMu, gkEventFillMapWithCovQvectorCentr, gkMuonFillMap>(event, muons, muons);
   }
+  void processVnGFWDecayToMuMuSkimmed(soa::Filtered<MyEventsVtxCovSelected>::iterator const& event, soa::Filtered<MyBarrelTracksSelected> const& tracks, soa::Filtered<MyMuonTracksSelected> const& muons)
+  {
+    // Reset the fValues array
+    VarManager::ResetValues(0, VarManager::kNVars);
+    VarManager::FillEvent<gkEventFillMapWithCov>(event, VarManager::fgValues);
+    runSameEventPairingWithGFW<true, VarManager::kDecayToMuMu, gkEventFillMapWithCov, gkMuonFillMap>(event, tracks, muons);
+  }
   void processElectronMuonSkimmed(soa::Filtered<MyEventsVtxCovSelected>::iterator const& event, soa::Filtered<MyBarrelTracksSelected> const& tracks, soa::Filtered<MyMuonTracksSelected> const& muons)
   {
     // Reset the fValues array
@@ -1302,6 +1730,7 @@ struct AnalysisSameEventPairing {
   PROCESS_SWITCH(AnalysisSameEventPairing, processVnDecayToEESkimmed, "Run electron-electron pairing, with skimmed tracks for vn", false);
   PROCESS_SWITCH(AnalysisSameEventPairing, processVnDecayToMuMuSkimmed, "Run muon-muon pairing, with skimmed tracks for vn", false);
   PROCESS_SWITCH(AnalysisSameEventPairing, processVnCentrDecayToMuMuSkimmed, "Run muon-muon pairing, with skimmed tracks for vn from central framework", false);
+  PROCESS_SWITCH(AnalysisSameEventPairing, processVnGFWDecayToMuMuSkimmed, "Run muon-muon pairing, with skimmed tracks for vn from Generic Framework", false);
   PROCESS_SWITCH(AnalysisSameEventPairing, processElectronMuonSkimmed, "Run electron-muon pairing, with skimmed tracks/muons", false);
   PROCESS_SWITCH(AnalysisSameEventPairing, processDecayToPiPiSkimmed, "Run pion-pion pairing, with skimmed tracks", false);
   PROCESS_SWITCH(AnalysisSameEventPairing, processAllSkimmed, "Run all types of pairing, with skimmed tracks/muons", false);
