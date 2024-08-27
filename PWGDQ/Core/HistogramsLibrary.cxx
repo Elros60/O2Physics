@@ -1020,9 +1020,10 @@ void o2::aod::dqhistograms::DefineHistograms(HistogramManager* hm, const char* h
         double minBins[4] = {0.0, 0.0, 2.5, 0.0};
         double maxBins[4] = {5.0, 30.0, 4.0, 90.0};
         hm->AddHistogram(histClass, "Mass_Pt_Rapidity_CentFT0C", "", 4, var, bins, minBins, maxBins, 0, -1, kTRUE);
-        hm->AddHistogram(histClass, "MultiDimuons", "", false, 50, 0.0, 50.0, VarManager::kMultDimuons);
-        hm->AddHistogram(histClass, "MultiDimuons_Corr2POIMp", "", false, 50, 0.0, 50.0, VarManager::kMultDimuons, 150, -0.1, 0.1, VarManager::kCORR2POIMp);
-        hm->AddHistogram(histClass, "MultiDimuons_Corr4POIMp", "", false, 50, 0.0, 50.0, VarManager::kMultDimuons, 150, -0.1, 0.1, VarManager::kCORR4POIMp);
+        hm->AddHistogram(histClass, "Corr2POIReal_Corr2POIImag", "", false, 500, -0.1, 0.1, VarManager::kCORR2POI, 500, -0.1, 0.1, VarManager::kCORR2POIImag);
+        hm->AddHistogram(histClass, "Corr4POIReal_Corr4POIImag", "", false, 500, -0.1, 0.1, VarManager::kCORR4POI, 500, -0.1, 0.1, VarManager::kCORR4POIImag);
+        hm->AddHistogram(histClass, "MultiDimuons_Corr2POI", "", false, 50, 0.0, 50.0, VarManager::kMultDimuons, 250, -0.1, 0.1, VarManager::kCORR2POI);
+        hm->AddHistogram(histClass, "MultiDimuons_Corr4POI", "", false, 50, 0.0, 50.0, VarManager::kMultDimuons, 250, -0.1, 0.1, VarManager::kCORR4POI);
         hm->AddHistogram(histClass, "Mass_Pt_centrFT0C_Corr2REF", "", true, 250, 0.0, 5.0, VarManager::kMass, 60, 0.0, 30.0, VarManager::kPt, 18, 0.0, 90.0, VarManager::kCentFT0C, "", "", "", VarManager::kCORR2REF, VarManager::kM11REFoverMp);
         hm->AddHistogram(histClass, "Mass_Pt_centrFT0C_Corr4REF", "", true, 250, 0.0, 5.0, VarManager::kMass, 60, 0.0, 30.0, VarManager::kPt, 18, 0.0, 90.0, VarManager::kCentFT0C, "", "", "", VarManager::kCORR4REF, VarManager::kM1111REFoverMp);
         hm->AddHistogram(histClass, "Mass_Pt_centrFT0C_Corr2POI", "", true, 250, 0.0, 5.0, VarManager::kMass, 60, 0.0, 30.0, VarManager::kPt, 18, 0.0, 90.0, VarManager::kCentFT0C, "", "", "", VarManager::kCORR2POIMp, VarManager::kM01POIoverMp);

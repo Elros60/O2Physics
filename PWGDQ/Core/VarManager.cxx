@@ -749,10 +749,14 @@ void VarManager::SetDefaultVarNames()
   fgVariableUnits[kCORR2REF] = "";
   fgVariableNames[kCORR2POI] = "<2'> ";
   fgVariableUnits[kCORR2POI] = "";
+  fgVariableNames[kCORR2POIImag] = "Im<2'> ";
+  fgVariableUnits[kCORR2POIImag] = "";
   fgVariableNames[kCORR4REF] = "<4> ";
   fgVariableUnits[kCORR4REF] = "";
   fgVariableNames[kCORR4POI] = "<4'> ";
   fgVariableUnits[kCORR4POI] = "";
+  fgVariableNames[kCORR4POIImag] = "Im<4'> ";
+  fgVariableUnits[kCORR4POIImag] = "";
   fgVariableNames[kM11REFoverMp] = "M_{11}^{REF}/M_{p} ";
   fgVariableUnits[kM11REFoverMp] = "";
   fgVariableNames[kM01POIoverMp] = "M^{'}_{01}^{POI}/M_{p} ";

@@ -600,8 +600,10 @@ class VarManager : public TObject
     kM0111POI,
     kCORR2REF,
     kCORR2POI,
+    kCORR2POIImag,
     kCORR4REF,
     kCORR4POI,
+    kCORR4POIImag,
     kM11REFoverMp,
     kM01POIoverMp,
     kM1111REFoverMp,
@@ -3928,6 +3930,8 @@ void VarManager::FillPairVn(T1 const& t1, T2 const& t2, float* values)
     values[kM0111POI] = values[kMultDimuons] * (values[kS31A] - 3. * values[kS11A] * values[kS12A] + 2. * values[kS13A]);
     values[kCORR2POI] = (P2 * conj(Q21)).real() / values[kM01POI];
     values[kCORR4POI] = (P2 * Q21 * conj(Q21) * conj(Q21) - P2 * Q21 * conj(Q42) - 2. * values[kS12A] * P2 * conj(Q21) + 2. * P2 * conj(Q23)).real() / values[kM0111POI];
+    values[kCORR2POIImag] = (P2 * conj(Q21)).imag() / values[kM01POI];
+    values[kCORR4POIImag] = (P2 * Q21 * conj(Q21) * conj(Q21) - P2 * Q21 * conj(Q42) - 2. * values[kS12A] * P2 * conj(Q21) + 2. * P2 * conj(Q23)).imag() / values[kM0111POI];
     values[kM01POIoverMp] = values[kMultDimuons] > 0 && !(isnan(values[kM01POI]) || isinf(values[kM01POI])) ? values[kM01POI] / values[kMultDimuons] : 0;
     values[kM0111POIoverMp] = values[kMultDimuons] > 0 && !(isnan(values[kM0111POI]) || isinf(values[kM0111POI])) ? values[kM0111POI] / values[kMultDimuons] : 0;
     values[kM11REFoverMp] = values[kMultDimuons] > 0 && !(isnan(values[kM11REF]) || isinf(values[kM11REF])) ? values[kM11REF] / values[kMultDimuons] : 0;
